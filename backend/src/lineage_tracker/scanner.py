@@ -62,9 +62,22 @@ def extract_table_references(sql: str) -> list[tuple[str | None, str]]:
     for statement in parsed:
         if statement is None:
             continue
+
+        # Collect CTE names to avoid treating them as real table references
+        cte_names: set[str] = set()
+        with_clause = statement.find(sqlglot.exp.With)
+        if with_clause:
+            for cte in with_clause.expressions:
+                if cte.alias:
+                    cte_names.add(cte.alias)
+
         for table in statement.find_all(sqlglot.exp.Table):
             table_name = table.name
             if not table_name:
+                continue
+
+            # Skip CTE references — they are not real tables
+            if table_name in cte_names:
                 continue
 
             # Extract dataset (db in sqlglot terms)
