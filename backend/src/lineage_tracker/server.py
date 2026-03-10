@@ -11,8 +11,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from lineage_tracker.extractor import BigQueryExtractor
@@ -105,6 +106,7 @@ def create_app(
     data_dir: Path,
     no_scan: bool = False,
     initial_scan_config: dict[str, Any] | None = None,
+    frontend_dir: Path | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -135,6 +137,13 @@ def create_app(
         yield
 
     app = FastAPI(title="SQL Lineage Tracker", version="0.1.0", lifespan=lifespan)
+
+    # Mount compiled frontend assets if available
+    _frontend_dir = frontend_dir if frontend_dir and frontend_dir.exists() else None
+    if _frontend_dir:
+        assets_dir = _frontend_dir / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
 
     app.state.project_id = project_id
     app.state.data_dir = data_dir
@@ -280,6 +289,16 @@ def create_app(
                 event_bus.unsubscribe(queue)
 
         return EventSourceResponse(event_generator())
+
+    # Catch-all route for SPA — must be registered AFTER all /api/* routes
+    if _frontend_dir:
+        index_html = _frontend_dir / "index.html"
+
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str) -> FileResponse:
+            if index_html.exists():
+                return FileResponse(index_html)
+            raise HTTPException(status_code=404, detail="Frontend not found")
 
     return app
 

@@ -745,7 +745,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Nodos con errores de permisos/parsing: marcar con status `warning`/`error`
 - [x] FastAPI: `GET /api/graph`, `GET /api/health`, `GET /api/datasets`, `GET /api/datasets/{id}/tables`
 - [x] `POST /api/scan` (asincrono) + `GET /api/scan/events` (SSE para progreso)
-- [ ] Servir frontend compilado desde `frontend/dist/` (postergado hasta tener frontend completo)
+- [x] Servir frontend compilado desde `frontend/dist/` (postergado hasta tener frontend completo)
 - [x] Persistencia del grafo en disco: `~/.sql-lineage-tracker/{project_id}/graph_data.json`
 - [x] Abrir navegador automaticamente al iniciar
 - [x] Re-escaneo: regenerar aristas automaticas desde cero, preservar aristas manuales existentes
@@ -754,7 +754,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 
 **Frontend (React/bun):**
 - [x] Setup con Vite + React + TypeScript + Tailwind + React Flow
-- [ ] Build compilado commiteado en `frontend/dist/`
+- [x] Build compilado commiteado en `frontend/dist/`
 - [x] Pantalla de configuracion de escaneo (datasets, target, profundidad) cuando no hay grafo
 - [x] Cliente HTTP + SSE para comunicacion con API
 - [x] Barra de progreso de escaneo (consume SSE)

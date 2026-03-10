@@ -1,9 +1,12 @@
 """CLI entry point for sql-lineage-tracker."""
 
 import argparse
+import logging
 import sys
 import webbrowser
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -78,11 +81,24 @@ def cmd_serve(args: argparse.Namespace) -> None:
             "depth": args.depth,
         }
 
+    # Locate compiled frontend: <repo_root>/frontend/dist
+    # __file__ is at backend/src/lineage_tracker/cli.py → 4 parents up = repo root
+    _repo_root = Path(__file__).parent.parent.parent.parent
+    frontend_dir = _repo_root / "frontend" / "dist"
+    if not frontend_dir.exists():
+        logger.warning(
+            "Frontend dist not found at %s — serving API only. "
+            "Run 'bun run build' in the frontend/ directory to enable the UI.",
+            frontend_dir,
+        )
+        frontend_dir = None
+
     app = create_app(
         project_id=args.project,
         data_dir=args.data_dir,
         no_scan=args.no_scan,
         initial_scan_config=scan_config,
+        frontend_dir=frontend_dir,
     )
 
     print(f"Starting sql-lineage-tracker server on http://localhost:{args.port}")
