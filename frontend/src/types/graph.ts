@@ -97,6 +97,13 @@ export interface ScanEvent {
   data?: Record<string, unknown>;
 }
 
+export interface GraphFilters {
+  datasets: Set<string>;
+  nodeTypes: Set<LineageNode["type"]>;
+  edgeTypes: Set<LineageEdge["edge_type"]>;
+  maxDepth: number | null; // null = no limit
+}
+
 export interface HealthStatus {
   status: string;
   project_id: string;

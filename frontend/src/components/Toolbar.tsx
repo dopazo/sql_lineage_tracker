@@ -14,6 +14,9 @@ interface ToolbarProps {
   onRescan: (config: ScanConfig) => void;
   onExport: () => void;
   scanning: boolean;
+  showFilters?: boolean;
+  onToggleFilters?: () => void;
+  isFiltered?: boolean;
 }
 
 export function Toolbar({
@@ -27,6 +30,9 @@ export function Toolbar({
   onRescan,
   onExport,
   scanning,
+  showFilters,
+  onToggleFilters,
+  isFiltered,
 }: ToolbarProps) {
   const [showRescan, setShowRescan] = useState(false);
   const [target, setTarget] = useState(
@@ -82,6 +88,24 @@ export function Toolbar({
           <span className="text-[var(--accent-teal)]">{stats.total_edges}</span> edges
         </span>
       </div>
+
+      {/* Filters toggle */}
+      {onToggleFilters && (
+        <button
+          onClick={onToggleFilters}
+          className={`btn-ghost text-sm relative ${showFilters ? "border-[var(--accent-cyan)] text-[var(--accent-cyan)]" : ""}`}
+        >
+          <span className="flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M1 3h14M3 8h10M5.5 13h5" strokeLinecap="round" />
+            </svg>
+            Filters
+          </span>
+          {isFiltered && (
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[var(--accent-cyan)]" />
+          )}
+        </button>
+      )}
 
       <div className="flex-1" />
 

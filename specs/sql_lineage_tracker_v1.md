@@ -784,10 +784,10 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Edicion y eliminacion de aristas manuales
 - [x] Aristas manuales visualmente distintas (linea punteada)
 - [x] Sugerencia de union manual al hacer clic en indicador de hueco
-- [ ] Filtro por dataset
-- [ ] Filtro por tipo de nodo
-- [ ] Filtro por tipo de arista (automatica / manual)
-- [ ] Filtro por profundidad (niveles upstream/downstream)
+- [x] Filtro por dataset
+- [x] Filtro por tipo de nodo
+- [x] Filtro por tipo de arista (automatica / manual)
+- [x] Filtro por profundidad (niveles upstream/downstream)
 - [ ] Drag and drop de nodos con persistencia de posiciones
 
 ### Fase 3 — Cobertura SQL extendida + Polish

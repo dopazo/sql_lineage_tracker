@@ -21,7 +21,9 @@ import { ScanProgressBar } from "./ScanProgressBar";
 import { NodeDetailPanel } from "./NodeDetailPanel";
 import { EdgeDetailPanel } from "./EdgeDetailPanel";
 import { ManualEdgeModal } from "./ManualEdgeModal";
+import { FilterPanel } from "./FilterPanel";
 import { useColumnSearch } from "../hooks/useColumnSearch";
+import { useGraphFilters } from "../hooks/useGraphFilters";
 import { useScanProgress } from "../hooks/useScanProgress";
 import { exportGraphJSON } from "../api/client";
 import type { ScanConfig } from "../types/graph";
@@ -32,7 +34,7 @@ interface ManualEdgeModalState {
   editingEdge?: LineageEdge;
 }
 
-const nodeTypes: NodeTypes = {
+const rfNodeTypes: NodeTypes = {
   tableNode: TableNode,
 };
 
@@ -106,6 +108,21 @@ function buildFlowElements(
 
 export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const {
+    filters,
+    filteredGraph,
+    isFiltered,
+    datasets,
+    nodeTypes: availableNodeTypes,
+    edgeTypes: availableEdgeTypes,
+    maxGraphDepth,
+    toggleDataset,
+    toggleNodeType,
+    toggleEdgeType,
+    setMaxDepth,
+    resetFilters,
+  } = useGraphFilters(graph);
+
+  const {
     query,
     setQuery,
     searchResults,
@@ -115,9 +132,11 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     traceNodeIds,
     traceEdgeIds,
     getHighlightedColumns,
-  } = useColumnSearch(graph);
+  } = useColumnSearch(filteredGraph);
 
   const { scanning, messages, scanError, runScan } = useScanProgress();
+
+  const [showFilters, setShowFilters] = useState(false);
 
   const [selectedNode, setSelectedNode] = useState<LineageNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<LineageEdge | null>(null);
@@ -152,13 +171,13 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () =>
       buildFlowElements(
-        graph,
+        filteredGraph,
         traceNodeIds,
         traceEdgeIds,
         getHighlightedColumns,
         handleGapClick
       ),
-    [graph, traceNodeIds, traceEdgeIds, getHighlightedColumns, handleGapClick]
+    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, handleGapClick]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -172,24 +191,24 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
-      const lineageNode = graph.nodes[node.id];
+      const lineageNode = filteredGraph.nodes[node.id];
       if (lineageNode) {
         setSelectedNode({ ...lineageNode, id: node.id } as LineageNode);
         setSelectedEdge(null);
       }
     },
-    [graph]
+    [filteredGraph]
   );
 
   const onEdgeClick = useCallback(
     (_event: React.MouseEvent, edge: Edge) => {
-      const lineageEdge = graph.edges.find((e) => e.id === edge.id);
+      const lineageEdge = filteredGraph.edges.find((e) => e.id === edge.id);
       if (lineageEdge) {
         setSelectedEdge(lineageEdge);
         setSelectedNode(null);
       }
     },
-    [graph]
+    [filteredGraph]
   );
 
   const handleRescan = useCallback(
@@ -202,7 +221,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-deep)]">
       <Toolbar
-        graph={graph}
+        graph={filteredGraph}
         searchQuery={query}
         onSearchQueryChange={setQuery}
         searchResults={searchResults}
@@ -212,6 +231,9 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         onRescan={handleRescan}
         onExport={() => exportGraphJSON(graph)}
         scanning={scanning}
+        showFilters={showFilters}
+        onToggleFilters={() => setShowFilters((v) => !v)}
+        isFiltered={isFiltered}
       />
 
       <ScanProgressBar
@@ -221,6 +243,21 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
       />
 
       <div className="flex flex-1 overflow-hidden">
+        {showFilters && (
+          <FilterPanel
+            filters={filters}
+            datasets={datasets}
+            nodeTypes={availableNodeTypes}
+            edgeTypes={availableEdgeTypes}
+            maxGraphDepth={maxGraphDepth}
+            isFiltered={isFiltered}
+            onToggleDataset={toggleDataset}
+            onToggleNodeType={toggleNodeType}
+            onToggleEdgeType={toggleEdgeType}
+            onSetMaxDepth={setMaxDepth}
+            onReset={resetFilters}
+          />
+        )}
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -228,7 +265,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
-            nodeTypes={nodeTypes}
+            nodeTypes={rfNodeTypes}
             fitView
             minZoom={0.1}
             maxZoom={2}
@@ -252,7 +289,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         {selectedNode && (
           <NodeDetailPanel
             node={selectedNode}
-            edges={graph.edges}
+            edges={filteredGraph.edges}
             onClose={() => setSelectedNode(null)}
             onAddUpstream={(nodeId) =>
               openManualEdgeModal(nodeId, "upstream")
