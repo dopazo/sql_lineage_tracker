@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from lineage_tracker.extractor import BigQueryExtractor
-from lineage_tracker.models import LineageGraph, ScanConfig
+from lineage_tracker.models import ColumnMapping, LineageEdge, LineageGraph, ScanConfig
 from lineage_tracker.persistence import graph_to_dict, load_graph, save_graph
 
 logger = logging.getLogger(__name__)
@@ -219,6 +219,152 @@ def create_app(
             for c in columns
         ])
 
+    # --- Manual Edge CRUD ---
+
+    @app.post("/api/manual-edge")
+    async def create_manual_edge(request: Request) -> JSONResponse:
+        """Create a manual edge between two nodes.
+
+        Body: {
+            source_node: string,
+            target_node: string,
+            description?: string,
+            column_mappings: [{
+                source_columns: string[],
+                target_column: string,
+                transformation: string,
+                expression?: string,
+                description?: string,
+            }]
+        }
+        """
+        graph: LineageGraph | None = app.state.graph
+        if graph is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No graph loaded"},
+            )
+
+        body = await request.json()
+        source_node = body.get("source_node")
+        target_node = body.get("target_node")
+
+        if not source_node or not target_node:
+            return JSONResponse(
+                status_code=422,
+                content={"error": "source_node and target_node are required"},
+            )
+
+        # Validate referenced nodes exist
+        missing = [n for n in (source_node, target_node) if n not in graph.nodes]
+        if missing:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Nodes not found: {', '.join(missing)}"},
+            )
+
+        # Build edge
+        edge_id = f"manual_{source_node}__{target_node}"
+        # Ensure unique id if one already exists
+        existing_ids = {e.id for e in graph.edges}
+        if edge_id in existing_ids:
+            counter = 2
+            while f"{edge_id}_{counter}" in existing_ids:
+                counter += 1
+            edge_id = f"{edge_id}_{counter}"
+
+        mappings = [
+            ColumnMapping(
+                source_columns=m.get("source_columns", []),
+                target_column=m["target_column"],
+                transformation=m.get("transformation", "unknown"),
+                expression=m.get("expression"),
+                description=m.get("description"),
+            )
+            for m in body.get("column_mappings", [])
+        ]
+
+        edge = LineageEdge(
+            id=edge_id,
+            source_node=source_node,
+            target_node=target_node,
+            edge_type="manual",
+            description=body.get("description"),
+            column_mappings=mappings,
+        )
+
+        graph.edges.append(edge)
+        _save_current_graph(app)
+
+        return JSONResponse(
+            status_code=201,
+            content=_edge_to_response(edge),
+        )
+
+    @app.put("/api/manual-edge/{edge_id:path}")
+    async def update_manual_edge(edge_id: str, request: Request) -> JSONResponse:
+        """Update an existing manual edge.
+
+        Body: same as POST (partial updates supported).
+        """
+        graph: LineageGraph | None = app.state.graph
+        if graph is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No graph loaded"},
+            )
+
+        edge = _find_manual_edge(graph, edge_id)
+        if edge is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Manual edge '{edge_id}' not found"},
+            )
+
+        body = await request.json()
+
+        # Update fields if provided
+        if "description" in body:
+            edge.description = body["description"]
+
+        if "column_mappings" in body:
+            edge.column_mappings = [
+                ColumnMapping(
+                    source_columns=m.get("source_columns", []),
+                    target_column=m["target_column"],
+                    transformation=m.get("transformation", "unknown"),
+                    expression=m.get("expression"),
+                    description=m.get("description"),
+                )
+                for m in body["column_mappings"]
+            ]
+
+        _save_current_graph(app)
+
+        return JSONResponse(content=_edge_to_response(edge))
+
+    @app.delete("/api/manual-edge/{edge_id:path}")
+    async def delete_manual_edge(edge_id: str) -> JSONResponse:
+        """Delete a manual edge."""
+        graph: LineageGraph | None = app.state.graph
+        if graph is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No graph loaded"},
+            )
+
+        edge = _find_manual_edge(graph, edge_id)
+        if edge is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Manual edge '{edge_id}' not found"},
+            )
+
+        graph.edges.remove(edge)
+        _save_current_graph(app)
+
+        return JSONResponse(content={"status": "deleted", "id": edge_id})
+
     @app.post("/api/scan")
     async def start_scan(request: Request) -> JSONResponse:
         """Start an async scan. Body: {target?, datasets?, depth?}."""
@@ -301,6 +447,42 @@ def create_app(
             raise HTTPException(status_code=404, detail="Frontend not found")
 
     return app
+
+
+def _find_manual_edge(graph: LineageGraph, edge_id: str) -> LineageEdge | None:
+    """Find a manual edge by ID, or return None."""
+    for edge in graph.edges:
+        if edge.id == edge_id and edge.edge_type == "manual":
+            return edge
+    return None
+
+
+def _save_current_graph(app: FastAPI) -> None:
+    """Persist the current graph to disk."""
+    graph: LineageGraph | None = app.state.graph
+    if graph is not None:
+        save_graph(graph, app.state.data_dir, app.state.project_id)
+
+
+def _edge_to_response(edge: LineageEdge) -> dict:
+    """Convert a LineageEdge to a JSON-serializable dict for API responses."""
+    return {
+        "id": edge.id,
+        "source_node": edge.source_node,
+        "target_node": edge.target_node,
+        "edge_type": edge.edge_type,
+        "description": edge.description,
+        "column_mappings": [
+            {
+                "source_columns": m.source_columns,
+                "target_column": m.target_column,
+                "transformation": m.transformation,
+                "expression": m.expression,
+                "description": m.description,
+            }
+            for m in edge.column_mappings
+        ],
+    }
 
 
 async def _run_scan(

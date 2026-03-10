@@ -182,6 +182,207 @@ class TestScanEndpoint:
         assert "already in progress" in resp.json()["error"]
 
 
+def _make_two_node_graph() -> LineageGraph:
+    """Graph with two nodes and no edges, for manual edge testing."""
+    return LineageGraph(
+        metadata=GraphMetadata(
+            project_id="test-project",
+            generated_at="2026-03-09T10:30:00Z",
+            scan_config=ScanConfig(datasets=["raw", "staging"]),
+            scan_stats=ScanStats(total_nodes=2, total_edges=0),
+        ),
+        nodes={
+            "raw.orders": LineageNode(
+                id="raw.orders",
+                type="table",
+                dataset="raw",
+                name="orders",
+                columns=[
+                    ColumnInfo(name="order_id", data_type="STRING"),
+                    ColumnInfo(name="amount", data_type="FLOAT64"),
+                ],
+                source="ingestion",
+            ),
+            "staging.orders_clean": LineageNode(
+                id="staging.orders_clean",
+                type="view",
+                dataset="staging",
+                name="orders_clean",
+                columns=[
+                    ColumnInfo(name="id", data_type="STRING"),
+                    ColumnInfo(name="revenue", data_type="FLOAT64"),
+                ],
+                source="bigquery_view",
+            ),
+        },
+        edges=[],
+    )
+
+
+def _app_with_graph(tmp_path: Path, graph: LineageGraph) -> TestClient:
+    save_graph(graph, tmp_path, "test-project")
+    app = create_app(
+        project_id="test-project",
+        data_dir=tmp_path,
+        no_scan=True,
+    )
+    return TestClient(app)
+
+
+class TestManualEdgeCreate:
+    def test_create_manual_edge(self, tmp_path: Path):
+        client = _app_with_graph(tmp_path, _make_two_node_graph())
+        resp = client.post("/api/manual-edge", json={
+            "source_node": "raw.orders",
+            "target_node": "staging.orders_clean",
+            "description": "External ETL process",
+            "column_mappings": [
+                {
+                    "source_columns": ["order_id"],
+                    "target_column": "id",
+                    "transformation": "rename",
+                },
+                {
+                    "source_columns": ["amount"],
+                    "target_column": "revenue",
+                    "transformation": "rename",
+                },
+            ],
+        })
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["edge_type"] == "manual"
+        assert data["source_node"] == "raw.orders"
+        assert data["target_node"] == "staging.orders_clean"
+        assert len(data["column_mappings"]) == 2
+        assert data["id"].startswith("manual_")
+
+        # Verify edge appears in graph
+        graph_resp = client.get("/api/graph")
+        edges = graph_resp.json()["edges"]
+        assert len(edges) == 1
+        assert edges[0]["edge_type"] == "manual"
+
+    def test_create_edge_no_graph(self, tmp_path: Path):
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        client = TestClient(app)
+        resp = client.post("/api/manual-edge", json={
+            "source_node": "a.b",
+            "target_node": "c.d",
+            "column_mappings": [],
+        })
+        assert resp.status_code == 400
+
+    def test_create_edge_missing_fields(self, tmp_path: Path):
+        client = _app_with_graph(tmp_path, _make_two_node_graph())
+        resp = client.post("/api/manual-edge", json={
+            "column_mappings": [],
+        })
+        assert resp.status_code == 422
+
+    def test_create_edge_node_not_found(self, tmp_path: Path):
+        client = _app_with_graph(tmp_path, _make_two_node_graph())
+        resp = client.post("/api/manual-edge", json={
+            "source_node": "raw.orders",
+            "target_node": "nonexistent.table",
+            "column_mappings": [],
+        })
+        assert resp.status_code == 404
+
+    def test_create_duplicate_generates_unique_id(self, tmp_path: Path):
+        client = _app_with_graph(tmp_path, _make_two_node_graph())
+        body = {
+            "source_node": "raw.orders",
+            "target_node": "staging.orders_clean",
+            "column_mappings": [],
+        }
+        resp1 = client.post("/api/manual-edge", json=body)
+        resp2 = client.post("/api/manual-edge", json=body)
+        assert resp1.status_code == 201
+        assert resp2.status_code == 201
+        assert resp1.json()["id"] != resp2.json()["id"]
+
+
+class TestManualEdgeUpdate:
+    def test_update_manual_edge(self, tmp_path: Path):
+        client = _app_with_graph(tmp_path, _make_two_node_graph())
+        # Create first
+        create_resp = client.post("/api/manual-edge", json={
+            "source_node": "raw.orders",
+            "target_node": "staging.orders_clean",
+            "description": "Original",
+            "column_mappings": [],
+        })
+        edge_id = create_resp.json()["id"]
+
+        # Update
+        resp = client.put(f"/api/manual-edge/{edge_id}", json={
+            "description": "Updated description",
+            "column_mappings": [
+                {
+                    "source_columns": ["order_id"],
+                    "target_column": "id",
+                    "transformation": "direct",
+                },
+            ],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["description"] == "Updated description"
+        assert len(data["column_mappings"]) == 1
+
+    def test_update_nonexistent_edge(self, tmp_path: Path):
+        client = _app_with_graph(tmp_path, _make_two_node_graph())
+        resp = client.put("/api/manual-edge/nonexistent_id", json={
+            "description": "test",
+        })
+        assert resp.status_code == 404
+
+
+class TestManualEdgeDelete:
+    def test_delete_manual_edge(self, tmp_path: Path):
+        client = _app_with_graph(tmp_path, _make_two_node_graph())
+        # Create first
+        create_resp = client.post("/api/manual-edge", json={
+            "source_node": "raw.orders",
+            "target_node": "staging.orders_clean",
+            "column_mappings": [],
+        })
+        edge_id = create_resp.json()["id"]
+
+        # Delete
+        resp = client.delete(f"/api/manual-edge/{edge_id}")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "deleted"
+
+        # Verify removed from graph
+        graph_resp = client.get("/api/graph")
+        assert len(graph_resp.json()["edges"]) == 0
+
+    def test_delete_nonexistent_edge(self, tmp_path: Path):
+        client = _app_with_graph(tmp_path, _make_two_node_graph())
+        resp = client.delete("/api/manual-edge/nonexistent_id")
+        assert resp.status_code == 404
+
+    def test_cannot_delete_automatic_edge(self, tmp_path: Path):
+        """Automatic edges should not be deletable via manual-edge endpoint."""
+        graph = _make_two_node_graph()
+        graph.edges.append(LineageEdge(
+            id="auto_edge_1",
+            source_node="raw.orders",
+            target_node="staging.orders_clean",
+            edge_type="automatic",
+            column_mappings=[],
+        ))
+        client = _app_with_graph(tmp_path, graph)
+        resp = client.delete("/api/manual-edge/auto_edge_1")
+        assert resp.status_code == 404  # not found as manual edge
+
+
 class TestScanEventsEndpoint:
     def test_sse_endpoint_registered(self, tmp_path: Path):
         """Verify the SSE endpoint route exists on the app."""

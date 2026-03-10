@@ -1,10 +1,13 @@
 import type {
   LineageGraph,
+  LineageEdge,
   DatasetInfo,
   TableInfo,
   ScanConfig,
   ScanEvent,
   HealthStatus,
+  ManualEdgeRequest,
+  ColumnInfo,
 } from "../types/graph";
 
 const BASE_URL = "/api";
@@ -63,6 +66,44 @@ export function subscribeScanEvents(
   };
 
   return () => source.close();
+}
+
+export function getColumns(
+  datasetId: string,
+  tableName: string
+): Promise<ColumnInfo[]> {
+  return fetchJSON(
+    `/columns/${encodeURIComponent(datasetId)}/${encodeURIComponent(tableName)}`
+  );
+}
+
+export function createManualEdge(
+  edge: ManualEdgeRequest
+): Promise<LineageEdge> {
+  return fetchJSON("/manual-edge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(edge),
+  });
+}
+
+export function updateManualEdge(
+  edgeId: string,
+  edge: Partial<ManualEdgeRequest>
+): Promise<LineageEdge> {
+  return fetchJSON(`/manual-edge/${encodeURIComponent(edgeId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(edge),
+  });
+}
+
+export function deleteManualEdge(
+  edgeId: string
+): Promise<{ status: string; id: string }> {
+  return fetchJSON(`/manual-edge/${encodeURIComponent(edgeId)}`, {
+    method: "DELETE",
+  });
 }
 
 export function exportGraphJSON(graph: LineageGraph): void {

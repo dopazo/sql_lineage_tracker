@@ -103,3 +103,16 @@ export interface HealthStatus {
   has_graph: boolean;
   bigquery_connected: boolean;
 }
+
+export interface ManualEdgeRequest {
+  source_node: string;
+  target_node: string;
+  description?: string;
+  column_mappings: {
+    source_columns: string[];
+    target_column: string;
+    transformation: ColumnMapping["transformation"];
+    expression?: string;
+    description?: string;
+  }[];
+}

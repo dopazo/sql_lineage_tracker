@@ -775,14 +775,14 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 
 **Objetivo:** Cerrar huecos del grafo manualmente y mejorar navegacion.
 
-- [ ] Endpoints CRUD de aristas manuales (`POST/PUT/DELETE /api/manual-edge`)
-- [ ] `GET /api/columns/{dataset}/{table}` — consultar columnas en BigQuery
+- [x] Endpoints CRUD de aristas manuales (`POST/PUT/DELETE /api/manual-edge`)
+- [x] `GET /api/columns/{dataset}/{table}` — consultar columnas en BigQuery
 - [ ] Modal de creacion de union manual (upstream y downstream)
 - [ ] Autocompletado de tablas existentes en el modal
 - [ ] Tabla de mapeo con defaults por mismo nombre
 - [ ] Soporte para tipos: direct, rename, external, new_field, expression (N a 1)
 - [ ] Edicion y eliminacion de aristas manuales
-- [ ] Aristas manuales visualmente distintas (linea punteada)
+- [x] Aristas manuales visualmente distintas (linea punteada)
 - [ ] Sugerencia de union manual al hacer clic en indicador de hueco
 - [ ] Filtro por dataset
 - [ ] Filtro por tipo de nodo
