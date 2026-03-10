@@ -749,7 +749,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Persistencia del grafo en disco: `~/.sql-lineage-tracker/{project_id}/graph_data.json`
 - [x] Abrir navegador automaticamente al iniciar
 - [x] Re-escaneo: regenerar aristas automaticas desde cero, preservar aristas manuales existentes
-- [ ] Reporte de estadisticas y errores en consola al escanear
+- [x] Reporte de estadisticas y errores en consola al escanear
 - [x] Tests unitarios del modulo de parsing (sqlglot)
 
 **Frontend (React/bun):**

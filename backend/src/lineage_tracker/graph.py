@@ -321,3 +321,83 @@ def _log_report(stats: ScanStats, errors: list[str]) -> None:
         logger.warning("  Scan errors:")
         for err in errors:
             logger.warning("    - %s", err)
+
+
+def format_scan_report(
+    graph: LineageGraph, errors: list[str] | None = None
+) -> str:
+    """Build a human-readable console report of scan results.
+
+    Returns a formatted string ready to be printed to stdout.
+    """
+    stats = graph.metadata.scan_stats
+    config = graph.metadata.scan_config
+    lines: list[str] = []
+
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("  SCAN REPORT")
+    lines.append("=" * 60)
+
+    # --- Scan config ---
+    cfg_parts: list[str] = []
+    if config.target:
+        cfg_parts.append(f"target={config.target}")
+    if config.datasets:
+        cfg_parts.append(f"datasets={', '.join(config.datasets)}")
+    if config.depth is not None:
+        cfg_parts.append(f"depth={config.depth}")
+    if cfg_parts:
+        lines.append(f"  Config: {', '.join(cfg_parts)}")
+
+    lines.append("")
+
+    # --- Summary ---
+    lines.append(f"  Nodes: {stats.total_nodes}")
+    if stats.nodes_by_type:
+        type_parts = [f"{v} {k}s" for k, v in sorted(stats.nodes_by_type.items())]
+        lines.append(f"    ({', '.join(type_parts)})")
+    lines.append(f"  Edges: {stats.total_edges}")
+    lines.append("")
+
+    # --- Graph structure ---
+    has_structure_info = (
+        stats.orphan_nodes or stats.terminal_nodes or stats.truncated_nodes
+    )
+    if has_structure_info:
+        lines.append("  Structure:")
+        if stats.orphan_nodes:
+            lines.append(f"    Orphan nodes (no connections): {stats.orphan_nodes}")
+        if stats.terminal_nodes:
+            lines.append(f"    Terminal nodes (consumers):    {stats.terminal_nodes}")
+        if stats.truncated_nodes:
+            lines.append(f"    Truncated (depth limit):       {stats.truncated_nodes}")
+        lines.append("")
+
+    # --- Parse quality ---
+    if stats.parse_errors:
+        lines.append(f"  Parse errors: {stats.parse_errors}")
+        lines.append("")
+
+    # --- Node status breakdown ---
+    status_counts: dict[str, int] = defaultdict(int)
+    for node in graph.nodes.values():
+        if node.status != "ok":
+            status_counts[node.status] += 1
+    if status_counts:
+        lines.append("  Nodes with issues:")
+        for status, count in sorted(status_counts.items()):
+            lines.append(f"    {status}: {count}")
+        lines.append("")
+
+    # --- Errors ---
+    err_list = errors or []
+    if err_list:
+        lines.append(f"  Errors ({len(err_list)}):")
+        for err in err_list:
+            lines.append(f"    - {err}")
+        lines.append("")
+
+    lines.append("=" * 60)
+    lines.append("")
+    return "\n".join(lines)

@@ -6,7 +6,7 @@ column lineage status marking, and statistics computation.
 
 import pytest
 
-from lineage_tracker.graph import build_graph, topological_sort
+from lineage_tracker.graph import build_graph, format_scan_report, topological_sort
 from lineage_tracker.models import (
     ColumnInfo,
     LineageEdge,
@@ -303,3 +303,68 @@ class TestBuildGraph:
         graph = build_graph(scan_result, ScanConfig(), "proj")
         # ds.v has an incoming edge (from ds.src) but no outgoing
         assert graph.metadata.scan_stats.terminal_nodes == 1
+
+
+class TestFormatScanReport:
+    """Tests for the console scan report formatter."""
+
+    def test_includes_summary_stats(self):
+        """Report should include node and edge counts."""
+        scan_result = ScanResult(
+            nodes={
+                "ds.src": _make_table("ds.src", ["x"]),
+                "ds.v": _make_view("ds.v", "SELECT x FROM ds.src", ["x"]),
+            }
+        )
+        graph = build_graph(scan_result, ScanConfig(), "proj")
+        report = format_scan_report(graph)
+
+        assert "Nodes: 2" in report
+        assert "Edges: 1" in report
+        assert "SCAN REPORT" in report
+
+    def test_includes_config(self):
+        """Report should show scan configuration."""
+        scan_result = ScanResult(
+            nodes={"ds.t": _make_table("ds.t", ["a"])}
+        )
+        config = ScanConfig(target="ds.t", datasets=["ds"], depth=2)
+        graph = build_graph(scan_result, config, "proj")
+        report = format_scan_report(graph)
+
+        assert "target=ds.t" in report
+        assert "datasets=ds" in report
+        assert "depth=2" in report
+
+    def test_includes_errors(self):
+        """Report should list scan errors when provided."""
+        scan_result = ScanResult(
+            nodes={"ds.t": _make_table("ds.t", ["a"])},
+            errors=["Dataset 'missing' not found"],
+        )
+        graph = build_graph(scan_result, ScanConfig(), "proj")
+        report = format_scan_report(graph, scan_result.errors)
+
+        assert "Errors (1)" in report
+        assert "Dataset 'missing' not found" in report
+
+    def test_includes_parse_errors(self):
+        """Report should mention parse errors count."""
+        scan_result = ScanResult(
+            nodes={
+                "ds.bad": _make_view("ds.bad", "NOT VALID SQL @@@", ["x"]),
+            }
+        )
+        graph = build_graph(scan_result, ScanConfig(), "proj")
+        report = format_scan_report(graph)
+
+        assert "Parse errors:" in report
+
+    def test_empty_graph(self):
+        """Report should work with an empty graph."""
+        scan_result = ScanResult(nodes={})
+        graph = build_graph(scan_result, ScanConfig(), "proj")
+        report = format_scan_report(graph)
+
+        assert "Nodes: 0" in report
+        assert "Edges: 0" in report

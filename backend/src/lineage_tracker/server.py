@@ -335,6 +335,11 @@ async def _run_scan(
         app.state.graph = graph
         save_graph(graph, app.state.data_dir, app.state.project_id)
 
+        # Print console report
+        from lineage_tracker.graph import format_scan_report
+
+        print(format_scan_report(graph, scan_result.errors))
+
         event_bus.publish(
             "complete",
             f"Scan complete: {len(graph.nodes)} nodes, {len(graph.edges)} edges",
