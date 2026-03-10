@@ -137,3 +137,133 @@ class TestDatasetsEndpoint:
         client = TestClient(app)
         resp = client.get("/api/datasets/staging/tables")
         assert resp.status_code == 503
+
+
+class TestScanEndpoint:
+    def test_scan_rejected_when_no_scan_mode(self, tmp_path: Path):
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        client = TestClient(app)
+        resp = client.post("/api/scan", json={"target": "staging.view1"})
+        assert resp.status_code == 400
+        assert "disabled" in resp.json()["error"]
+
+    def test_scan_rejected_when_no_bigquery(self, tmp_path: Path):
+        # no_scan=False but BigQuery init will fail (no credentials)
+        # We manually set extractor to None to simulate
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,  # easiest way to get extractor=None
+        )
+        # Override no_scan to False so the check passes the first guard
+        app.state.no_scan = False
+        client = TestClient(app)
+        resp = client.post("/api/scan", json={"target": "staging.view1"})
+        assert resp.status_code == 503
+        assert "BigQuery" in resp.json()["error"]
+
+    def test_scan_rejected_when_already_in_progress(self, tmp_path: Path):
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        app.state.no_scan = False
+        # Fake an extractor so it passes the None check
+        app.state.extractor = "fake"
+        app.state.scan_in_progress = True
+        client = TestClient(app)
+        resp = client.post("/api/scan", json={"target": "staging.view1"})
+        assert resp.status_code == 409
+        assert "already in progress" in resp.json()["error"]
+
+
+class TestScanEventsEndpoint:
+    def test_sse_endpoint_registered(self, tmp_path: Path):
+        """Verify the SSE endpoint route exists on the app."""
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        routes = {r.path for r in app.routes}
+        assert "/api/scan/events" in routes
+
+
+class TestScanEventBus:
+    def test_publish_and_subscribe(self):
+        import asyncio
+        import json
+
+        from lineage_tracker.server import ScanEventBus
+
+        bus = ScanEventBus()
+        loop = asyncio.new_event_loop()
+        bus.bind_loop(loop)
+
+        q = bus.subscribe()
+        bus.publish("scan_start", "Starting scan")
+
+        # Process the call_soon_threadsafe callbacks
+        loop.run_until_complete(asyncio.sleep(0))
+
+        assert not q.empty()
+        event = q.get_nowait()
+        assert event["event"] == "scan_start"
+        data = json.loads(event["data"])
+        assert data["type"] == "scan_start"
+        assert data["message"] == "Starting scan"
+        assert "timestamp" in data
+
+        loop.close()
+
+    def test_finish_sends_none(self):
+        import asyncio
+
+        from lineage_tracker.server import ScanEventBus
+
+        bus = ScanEventBus()
+        q = bus.subscribe()
+        bus.finish()
+
+        assert not q.empty()
+        event = q.get_nowait()
+        assert event is None
+
+    def test_reset_clears_state(self):
+        import asyncio
+
+        from lineage_tracker.server import ScanEventBus
+
+        bus = ScanEventBus()
+        q = bus.subscribe()
+        bus.publish("test", "msg")
+        bus.reset()
+
+        # Old subscriber should get None (finish signal from reset)
+        # New subscriber should get no history
+        q2 = bus.subscribe()
+        assert q2.empty()
+
+    def test_late_subscriber_gets_history(self):
+        import asyncio
+        import json
+
+        from lineage_tracker.server import ScanEventBus
+
+        bus = ScanEventBus()
+        # Publish before subscribing (no loop needed — no subscribers)
+        bus.publish("event1", "first")
+        bus.publish("event2", "second")
+
+        q = bus.subscribe()
+        # Should receive history
+        assert not q.empty()
+        e1 = q.get_nowait()
+        e2 = q.get_nowait()
+        assert e1["event"] == "event1"
+        assert e2["event"] == "event2"

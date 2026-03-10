@@ -11,6 +11,7 @@ dataset do NOT count as a hop.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import sqlglot
@@ -107,9 +108,22 @@ def _resolve_dataset(
     return ref_dataset
 
 
+ProgressCallback = Callable[[str, str | None], None]
+"""Callable(event_type, message) used to report scan progress.
+
+Event types:
+- "scan_start": scan is beginning
+- "scan_dataset": scanning a dataset
+- "scan_node": fetching a specific node
+- "scan_complete": scan finished
+- "scan_error": a non-fatal error occurred
+"""
+
+
 def run_scoped_scan(
     extractor: BigQueryExtractor,
     config: ScanConfig,
+    progress: ProgressCallback | None = None,
 ) -> ScanResult:
     """Run a scoped scan following dependencies from a target.
 
@@ -126,20 +140,28 @@ def run_scoped_scan(
     """
     result = ScanResult()
 
+    def _report(event_type: str, message: str | None = None) -> None:
+        if progress is not None:
+            progress(event_type, message)
+
+    _report("scan_start", f"Starting scan (target={config.target}, datasets={config.datasets}, depth={config.depth})")
+
     if config.target:
-        _scan_from_target(extractor, config, result)
+        _scan_from_target(extractor, config, result, _report)
     elif config.datasets:
-        _scan_datasets(extractor, config, result)
+        _scan_datasets(extractor, config, result, _report)
     else:
         # Full project scan: get all datasets, then scan each
+        _report("scan_dataset", "Listing all datasets in project...")
         datasets = extractor.list_datasets()
         full_config = ScanConfig(
             target=None,
             datasets=[ds.id for ds in datasets],
             depth=config.depth,
         )
-        _scan_datasets(extractor, full_config, result)
+        _scan_datasets(extractor, full_config, result, _report)
 
+    _report("scan_complete", f"Scan finished: {len(result.nodes)} nodes discovered, {len(result.errors)} errors")
     return result
 
 
@@ -147,6 +169,7 @@ def _scan_from_target(
     extractor: BigQueryExtractor,
     config: ScanConfig,
     result: ScanResult,
+    report: Callable[[str, str | None], None] = lambda *_: None,
 ) -> None:
     """Scan backward from a target table/view."""
     assert config.target is not None
@@ -159,6 +182,7 @@ def _scan_from_target(
         return
 
     target_dataset, target_name = parts
+    report("scan_node", f"Starting backward trace from {config.target}")
 
     # Queue: nodes to visit. Key is node_id, value is _NodeRef.
     queue: list[_NodeRef] = [_NodeRef(dataset=target_dataset, name=target_name, dataset_hops=0)]
@@ -179,6 +203,7 @@ def _scan_from_target(
             continue
 
         # Fetch node metadata
+        report("scan_node", f"Fetching metadata for {node_id}")
         node = _fetch_node(extractor, ref, result)
         if node is None:
             continue
@@ -220,10 +245,13 @@ def _scan_datasets(
     extractor: BigQueryExtractor,
     config: ScanConfig,
     result: ScanResult,
+    report: Callable[[str, str | None], None] = lambda *_: None,
 ) -> None:
     """Scan all specified datasets and follow external dependencies."""
-    for dataset_id in config.datasets:
+    total_datasets = len(config.datasets)
+    for idx, dataset_id in enumerate(config.datasets, 1):
         logger.info("Scanning dataset: %s", dataset_id)
+        report("scan_dataset", f"Scanning dataset {dataset_id} ({idx}/{total_datasets})")
         try:
             nodes = extractor.extract_dataset(dataset_id)
         except Exception:
