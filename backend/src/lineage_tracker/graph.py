@@ -1,0 +1,307 @@
+"""Graph construction module.
+
+Takes nodes from the scanner and builds a complete LineageGraph by:
+1. Topologically sorting views (dependencies before dependents).
+2. Parsing each view's SQL in order using sqlglot.
+3. Detecting holes (orphan nodes, terminal nodes).
+4. Marking columns with unresolved lineage.
+5. Computing scan statistics.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections import defaultdict
+from datetime import datetime, timezone
+
+from lineage_tracker.models import (
+    GraphMetadata,
+    LineageEdge,
+    LineageGraph,
+    LineageNode,
+    ScanConfig,
+    ScanStats,
+)
+from lineage_tracker.parser import parse_view_lineage
+from lineage_tracker.scanner import ScanResult, extract_table_references
+
+logger = logging.getLogger(__name__)
+
+
+def topological_sort(nodes: dict[str, LineageNode]) -> list[str]:
+    """Sort view nodes in topological order (dependencies first).
+
+    Base tables (no SQL) come first, then views ordered so that each
+    view's dependencies appear before it in the list.
+
+    Uses Kahn's algorithm. If cycles exist, remaining nodes are appended
+    at the end (the cycle is broken arbitrarily).
+
+    Args:
+        nodes: Dict of node_id -> LineageNode.
+
+    Returns:
+        List of node_ids in topological order.
+    """
+    # Build adjacency: for each view, find which other nodes it depends on
+    # dependency_of[A] = [B, C] means A is a dependency of B and C
+    dependents: dict[str, list[str]] = defaultdict(list)  # dep -> [nodes that depend on it]
+    in_degree: dict[str, int] = {node_id: 0 for node_id in nodes}
+
+    for node_id, node in nodes.items():
+        if not node.sql:
+            continue
+
+        refs = extract_table_references(node.sql)
+        for ref_dataset, ref_name in refs:
+            if ref_dataset:
+                dep_id = f"{ref_dataset}.{ref_name}"
+            else:
+                # Unqualified: assume same dataset
+                dep_id = f"{node.dataset}.{ref_name}"
+
+            if dep_id in nodes and dep_id != node_id:
+                dependents[dep_id].append(node_id)
+                in_degree[node_id] += 1
+
+    # Kahn's algorithm
+    queue: list[str] = [nid for nid, deg in in_degree.items() if deg == 0]
+    sorted_ids: list[str] = []
+
+    while queue:
+        nid = queue.pop(0)
+        sorted_ids.append(nid)
+        for dependent in dependents.get(nid, []):
+            in_degree[dependent] -= 1
+            if in_degree[dependent] == 0:
+                queue.append(dependent)
+
+    # If there are remaining nodes (cycles), append them
+    remaining = [nid for nid in nodes if nid not in set(sorted_ids)]
+    if remaining:
+        logger.warning(
+            "Cycle detected in dependency graph, %d nodes involved: %s",
+            len(remaining),
+            remaining,
+        )
+        sorted_ids.extend(remaining)
+
+    return sorted_ids
+
+
+def build_graph(
+    scan_result: ScanResult,
+    config: ScanConfig,
+    project_id: str,
+    existing_manual_edges: list[LineageEdge] | None = None,
+) -> LineageGraph:
+    """Build a complete LineageGraph from scan results.
+
+    1. Topologically sorts the scanned nodes.
+    2. Parses each view in order, building up schemas progressively.
+    3. Collects all edges (automatic + preserved manual).
+    4. Detects holes and computes statistics.
+
+    Args:
+        scan_result: Result from run_scoped_scan().
+        config: The scan configuration used.
+        project_id: GCP project ID.
+        existing_manual_edges: Manual edges to preserve from a previous graph.
+
+    Returns:
+        Complete LineageGraph ready for serialization.
+    """
+    nodes = scan_result.nodes
+
+    # Build known schemas from node columns
+    schemas: dict[str, dict[str, str]] = {}
+    for node_id, node in nodes.items():
+        if node.columns:
+            schemas[node_id] = {col.name: col.data_type for col in node.columns}
+
+    # Sort views topologically
+    sorted_ids = topological_sort(nodes)
+    logger.info("Topological order: %d nodes sorted", len(sorted_ids))
+
+    # Parse lineage for each view in topological order
+    all_edges: list[LineageEdge] = []
+    parse_errors = 0
+
+    for node_id in sorted_ids:
+        node = nodes[node_id]
+        if not node.sql:
+            continue  # Base tables have no SQL to parse
+
+        view_schema = schemas.get(node_id, {})
+        if not view_schema:
+            logger.warning("No schema for view %s, skipping lineage parse", node_id)
+            if node.status == "ok":
+                node.status = "warning"
+                node.status_message = "No schema available for lineage parsing"
+            parse_errors += 1
+            continue
+
+        try:
+            edges = parse_view_lineage(node_id, node.sql, schemas)
+            all_edges.extend(edges)
+
+            # Register parsed view's schema for downstream views to use
+            # (schema already in schemas from columns, but this ensures it's there)
+
+            # Mark columns with unresolved lineage
+            _mark_column_lineage_status(node, edges)
+
+            # Count as parse error if no edges produced for a view with SQL
+            if not edges:
+                parse_errors += 1
+                if node.status == "ok":
+                    node.status = "warning"
+                    node.status_message = "Lineage could not be resolved"
+
+        except Exception:
+            logger.exception("Failed to parse lineage for %s", node_id)
+            if node.status == "ok":
+                node.status = "warning"
+                node.status_message = "Lineage parsing failed"
+            parse_errors += 1
+            # Mark all columns as unknown
+            for col in node.columns:
+                col.lineage_status = "unknown"
+
+    # Preserve manual edges from previous graph
+    manual_edges: list[LineageEdge] = []
+    if existing_manual_edges:
+        for edge in existing_manual_edges:
+            if edge.edge_type == "manual":
+                # Check if referenced nodes still exist
+                if edge.source_node in nodes and edge.target_node in nodes:
+                    manual_edges.append(edge)
+                else:
+                    missing = []
+                    if edge.source_node not in nodes:
+                        missing.append(edge.source_node)
+                    if edge.target_node not in nodes:
+                        missing.append(edge.target_node)
+                    logger.warning(
+                        "Manual edge %s references missing nodes: %s",
+                        edge.id,
+                        missing,
+                    )
+
+    combined_edges = all_edges + manual_edges
+
+    # Detect holes and compute stats
+    stats = _compute_stats(nodes, combined_edges, parse_errors)
+
+    metadata = GraphMetadata(
+        project_id=project_id,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        scan_config=config,
+        scan_stats=stats,
+    )
+
+    graph = LineageGraph(
+        metadata=metadata,
+        nodes=nodes,
+        edges=combined_edges,
+    )
+
+    _log_report(stats, scan_result.errors)
+
+    return graph
+
+
+def _mark_column_lineage_status(
+    node: LineageNode,
+    edges: list[LineageEdge],
+) -> None:
+    """Mark columns as resolved or unknown based on parsed edges.
+
+    A column is "resolved" if it appears as a target_column in at least
+    one edge's column_mappings with a non-unknown transformation.
+    """
+    resolved_cols: set[str] = set()
+
+    for edge in edges:
+        if edge.target_node != node.id:
+            continue
+        for mapping in edge.column_mappings:
+            if mapping.transformation != "unknown":
+                resolved_cols.add(mapping.target_column)
+
+    for col in node.columns:
+        if col.name in resolved_cols:
+            col.lineage_status = "resolved"
+        else:
+            col.lineage_status = "unknown"
+
+
+def _compute_stats(
+    nodes: dict[str, LineageNode],
+    edges: list[LineageEdge],
+    parse_errors: int,
+) -> ScanStats:
+    """Compute graph statistics and detect holes."""
+    # Count nodes by type
+    nodes_by_type: dict[str, int] = defaultdict(int)
+    truncated_nodes = 0
+    for node in nodes.values():
+        nodes_by_type[node.type] += 1
+        if node.status == "truncated":
+            truncated_nodes += 1
+
+    # Build edge sets for hole detection
+    sources_in_edges: set[str] = set()  # nodes that appear as source
+    targets_in_edges: set[str] = set()  # nodes that appear as target
+
+    for edge in edges:
+        sources_in_edges.add(edge.source_node)
+        targets_in_edges.add(edge.target_node)
+
+    # Orphan nodes: no incoming edges AND no outgoing edges
+    orphan_nodes = 0
+    # Terminal nodes: have incoming edges but no outgoing (leaf consumers)
+    terminal_nodes = 0
+
+    for node_id in nodes:
+        has_incoming = node_id in targets_in_edges
+        has_outgoing = node_id in sources_in_edges
+
+        if not has_incoming and not has_outgoing:
+            orphan_nodes += 1
+        elif has_incoming and not has_outgoing:
+            terminal_nodes += 1
+
+    return ScanStats(
+        total_nodes=len(nodes),
+        total_edges=len(edges),
+        nodes_by_type=dict(nodes_by_type),
+        orphan_nodes=orphan_nodes,
+        terminal_nodes=terminal_nodes,
+        truncated_nodes=truncated_nodes,
+        parse_errors=parse_errors,
+    )
+
+
+def _log_report(stats: ScanStats, errors: list[str]) -> None:
+    """Log a summary report of the scan results."""
+    logger.info(
+        "Graph built: %d nodes, %d edges",
+        stats.total_nodes,
+        stats.total_edges,
+    )
+    logger.info("  Nodes by type: %s", stats.nodes_by_type)
+
+    if stats.orphan_nodes:
+        logger.warning("  Orphan nodes (no connections): %d", stats.orphan_nodes)
+    if stats.terminal_nodes:
+        logger.info("  Terminal nodes (consumers): %d", stats.terminal_nodes)
+    if stats.truncated_nodes:
+        logger.info("  Truncated nodes (depth limit): %d", stats.truncated_nodes)
+    if stats.parse_errors:
+        logger.warning("  Parse errors: %d", stats.parse_errors)
+
+    if errors:
+        logger.warning("  Scan errors:")
+        for err in errors:
+            logger.warning("    - %s", err)

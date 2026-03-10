@@ -738,11 +738,11 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Escaneo acotado: seguir dependencias desde --target con limite de profundidad por saltos de dataset
 - [x] Filtrado por datasets especificos (--dataset)
 - [x] Parsing de linaje con sqlglot: SELECT, alias/rename, JOIN, CTE, expresiones basicas
-- [ ] Ordenamiento topologico de vistas
-- [ ] Construccion del grafo y deteccion de huecos
-- [ ] Columnas con linaje no resuelto: marcar como `unknown` con indicador visual
-- [ ] Nodos truncados por profundidad: marcar con status `truncated`
-- [ ] Nodos con errores de permisos/parsing: marcar con status `warning`/`error`
+- [x] Ordenamiento topologico de vistas
+- [x] Construccion del grafo y deteccion de huecos
+- [x] Columnas con linaje no resuelto: marcar como `unknown` con indicador visual
+- [x] Nodos truncados por profundidad: marcar con status `truncated`
+- [x] Nodos con errores de permisos/parsing: marcar con status `warning`/`error`
 - [ ] FastAPI: `GET /api/graph`, `GET /api/health`, `GET /api/datasets`, `GET /api/datasets/{id}/tables`
 - [ ] `POST /api/scan` (asincrono) + `GET /api/scan/events` (SSE para progreso)
 - [ ] Servir frontend compilado desde `frontend/dist/`
