@@ -743,11 +743,11 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Columnas con linaje no resuelto: marcar como `unknown` con indicador visual
 - [x] Nodos truncados por profundidad: marcar con status `truncated`
 - [x] Nodos con errores de permisos/parsing: marcar con status `warning`/`error`
-- [ ] FastAPI: `GET /api/graph`, `GET /api/health`, `GET /api/datasets`, `GET /api/datasets/{id}/tables`
+- [x] FastAPI: `GET /api/graph`, `GET /api/health`, `GET /api/datasets`, `GET /api/datasets/{id}/tables`
 - [ ] `POST /api/scan` (asincrono) + `GET /api/scan/events` (SSE para progreso)
 - [ ] Servir frontend compilado desde `frontend/dist/`
-- [ ] Persistencia del grafo en disco: `~/.sql-lineage-tracker/{project_id}/graph_data.json`
-- [ ] Abrir navegador automaticamente al iniciar
+- [x] Persistencia del grafo en disco: `~/.sql-lineage-tracker/{project_id}/graph_data.json`
+- [x] Abrir navegador automaticamente al iniciar
 - [ ] Re-escaneo: regenerar aristas automaticas desde cero, preservar aristas manuales existentes
 - [ ] Reporte de estadisticas y errores en consola al escanear
 - [x] Tests unitarios del modulo de parsing (sqlglot)
