@@ -102,3 +102,6 @@ cd frontend
 bun run build  # Creates dist/
 # dist/ folder should be committed to repo
 ```
+
+## IMPORTANT
+If you complete a task given from a spec, make sure to also mark the task as complete in the spec itself

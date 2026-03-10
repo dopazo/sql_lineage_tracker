@@ -734,7 +734,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 **Backend (Python/uv):**
 - [x] Setup del proyecto con `uv` y `pyproject.toml`
 - [x] CLI entry point: `sql-lineage-tracker serve --project <id> [--target] [--dataset] [--depth] [--port] [--data-dir] [--no-scan]` (se ejecuta via `uv run`)
-- [ ] Conexion a BigQuery: listar datasets, extraer tablas base, vistas, columnas
+- [x] Conexion a BigQuery: listar datasets, extraer tablas base, vistas, columnas
 - [ ] Escaneo acotado: seguir dependencias desde --target con limite de profundidad por saltos de dataset
 - [ ] Filtrado por datasets especificos (--dataset)
 - [ ] Parsing de linaje con sqlglot: SELECT, alias/rename, JOIN, CTE, expresiones basicas

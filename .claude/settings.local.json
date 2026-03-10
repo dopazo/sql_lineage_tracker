@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd C:/Users/diego/Documents/Diego/projects/sql_lineage_tracker/backend && uv run pytest tests/test_extractor.py -v 2>&1)",
+      "Bash(cd C:/Users/diego/Documents/Diego/projects/sql_lineage_tracker/backend && uv run pytest -v 2>&1)"
+    ]
+  }
+}
