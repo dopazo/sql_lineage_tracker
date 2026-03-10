@@ -6,38 +6,76 @@ View tested:
 
 import pytest
 
+from lineage_tracker.parser import parse_view_lineage
 
-@pytest.mark.skip(reason="parser.py not implemented yet")
+
+def _get_mapping(edges, source_node, target_column):
+    """Helper: find a specific column mapping from edges."""
+    for edge in edges:
+        if edge.source_node == source_node:
+            for m in edge.column_mappings:
+                if m.target_column == target_column:
+                    return m
+    return None
+
+
+def _get_edge(edges, source_node):
+    """Helper: find edge by source node."""
+    for edge in edges:
+        if edge.source_node == source_node:
+            return edge
+    return None
+
+
 class TestOrdersWithCustomer:
     """staging.orders_with_customer: columns from two joined views."""
 
-    def test_id_pedido_from_orders_clean(self, schemas, view_sql):
-        # o.id_pedido -> id_pedido, source: staging.orders_clean
-        # transformation: "direct"
-        pass
+    @pytest.fixture(autouse=True)
+    def parse(self, schemas, view_sql):
+        self.edges = parse_view_lineage(
+            "staging.orders_with_customer",
+            view_sql["staging.orders_with_customer"],
+            schemas,
+        )
 
-    def test_revenue_from_orders_clean(self, schemas, view_sql):
-        # o.revenue -> revenue, source: staging.orders_clean
-        pass
+    def test_id_pedido_from_orders_clean(self):
+        m = _get_mapping(self.edges, "staging.orders_clean", "id_pedido")
+        assert m is not None
+        assert m.source_columns == ["id_pedido"]
+        assert m.transformation == "direct"
 
-    def test_created_at_from_orders_clean(self, schemas, view_sql):
-        # o.created_at -> created_at, source: staging.orders_clean
-        pass
+    def test_revenue_from_orders_clean(self):
+        m = _get_mapping(self.edges, "staging.orders_clean", "revenue")
+        assert m is not None
+        assert m.source_columns == ["revenue"]
+        assert m.transformation == "direct"
 
-    def test_nombre_as_nombre_cliente(self, schemas, view_sql):
-        # c.nombre AS nombre_cliente, source: staging.customers_clean
-        # transformation: "rename"
-        pass
+    def test_created_at_from_orders_clean(self):
+        m = _get_mapping(self.edges, "staging.orders_clean", "created_at")
+        assert m is not None
+        assert m.source_columns == ["created_at"]
+        assert m.transformation == "direct"
 
-    def test_pais_from_customers_clean(self, schemas, view_sql):
-        # c.pais -> pais, source: staging.customers_clean
-        # transformation: "direct"
-        pass
+    def test_nombre_as_nombre_cliente(self):
+        m = _get_mapping(self.edges, "staging.customers_clean", "nombre_cliente")
+        assert m is not None
+        assert m.source_columns == ["nombre"]
+        assert m.transformation == "rename"
 
-    def test_edge_from_orders_clean_exists(self, schemas, view_sql):
-        # Should produce an edge from staging.orders_clean -> staging.orders_with_customer
-        pass
+    def test_pais_from_customers_clean(self):
+        m = _get_mapping(self.edges, "staging.customers_clean", "pais")
+        assert m is not None
+        assert m.source_columns == ["pais"]
+        assert m.transformation == "direct"
 
-    def test_edge_from_customers_clean_exists(self, schemas, view_sql):
-        # Should produce an edge from staging.customers_clean -> staging.orders_with_customer
-        pass
+    def test_edge_from_orders_clean_exists(self):
+        edge = _get_edge(self.edges, "staging.orders_clean")
+        assert edge is not None
+        assert edge.target_node == "staging.orders_with_customer"
+        assert len(edge.column_mappings) == 3  # id_pedido, revenue, created_at
+
+    def test_edge_from_customers_clean_exists(self):
+        edge = _get_edge(self.edges, "staging.customers_clean")
+        assert edge is not None
+        assert edge.target_node == "staging.orders_with_customer"
+        assert len(edge.column_mappings) == 2  # nombre_cliente, pais

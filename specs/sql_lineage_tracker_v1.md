@@ -737,7 +737,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Conexion a BigQuery: listar datasets, extraer tablas base, vistas, columnas
 - [x] Escaneo acotado: seguir dependencias desde --target con limite de profundidad por saltos de dataset
 - [x] Filtrado por datasets especificos (--dataset)
-- [ ] Parsing de linaje con sqlglot: SELECT, alias/rename, JOIN, CTE, expresiones basicas
+- [x] Parsing de linaje con sqlglot: SELECT, alias/rename, JOIN, CTE, expresiones basicas
 - [ ] Ordenamiento topologico de vistas
 - [ ] Construccion del grafo y deteccion de huecos
 - [ ] Columnas con linaje no resuelto: marcar como `unknown` con indicador visual
@@ -750,7 +750,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [ ] Abrir navegador automaticamente al iniciar
 - [ ] Re-escaneo: regenerar aristas automaticas desde cero, preservar aristas manuales existentes
 - [ ] Reporte de estadisticas y errores en consola al escanear
-- [ ] Tests unitarios del modulo de parsing (sqlglot)
+- [x] Tests unitarios del modulo de parsing (sqlglot)
 
 **Frontend (React/bun):**
 - [ ] Setup con Vite + React + TypeScript + Tailwind + React Flow
