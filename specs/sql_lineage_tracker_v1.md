@@ -783,7 +783,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Soporte para tipos: direct, rename, external, new_field, expression (N a 1)
 - [x] Edicion y eliminacion de aristas manuales
 - [x] Aristas manuales visualmente distintas (linea punteada)
-- [ ] Sugerencia de union manual al hacer clic en indicador de hueco
+- [x] Sugerencia de union manual al hacer clic en indicador de hueco
 - [ ] Filtro por dataset
 - [ ] Filtro por tipo de nodo
 - [ ] Filtro por tipo de arista (automatica / manual)

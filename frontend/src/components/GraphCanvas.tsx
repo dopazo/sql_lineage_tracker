@@ -45,9 +45,18 @@ function buildFlowElements(
   graph: LineageGraph,
   traceNodeIds: Set<string> | null,
   traceEdgeIds: Set<string> | null,
-  getHighlightedColumns: (nodeId: string) => string[]
+  getHighlightedColumns: (nodeId: string) => string[],
+  onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void
 ): { nodes: Node[]; edges: Edge[] } {
   const hasTrace = traceNodeIds !== null;
+
+  // Compute which nodes have incoming/outgoing edges
+  const hasIncoming = new Set<string>();
+  const hasOutgoing = new Set<string>();
+  for (const edge of graph.edges) {
+    hasOutgoing.add(edge.source_node);
+    hasIncoming.add(edge.target_node);
+  }
 
   const flowNodes: Node[] = Object.entries(graph.nodes).map(
     ([id, node]: [string, LineageNode]) => ({
@@ -58,6 +67,9 @@ function buildFlowElements(
         lineageNode: { ...node, id },
         highlightedColumns: getHighlightedColumns(id),
         dimmed: hasTrace && !traceNodeIds.has(id),
+        missingUpstream: !hasIncoming.has(id) && node.type !== "table",
+        missingDownstream: !hasOutgoing.has(id),
+        onGapClick,
       },
     })
   );
@@ -130,15 +142,23 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     onGraphReload();
   }, [onGraphReload]);
 
+  const handleGapClick = useCallback(
+    (nodeId: string, direction: "upstream" | "downstream") => {
+      openManualEdgeModal(nodeId, direction);
+    },
+    [openManualEdgeModal]
+  );
+
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () =>
       buildFlowElements(
         graph,
         traceNodeIds,
         traceEdgeIds,
-        getHighlightedColumns
+        getHighlightedColumns,
+        handleGapClick
       ),
-    [graph, traceNodeIds, traceEdgeIds, getHighlightedColumns]
+    [graph, traceNodeIds, traceEdgeIds, getHighlightedColumns, handleGapClick]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);

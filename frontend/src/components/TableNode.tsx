@@ -20,11 +20,21 @@ interface TableNodeData {
   lineageNode: LineageNode;
   highlightedColumns: string[];
   dimmed: boolean;
+  missingUpstream: boolean;
+  missingDownstream: boolean;
+  onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void;
   [key: string]: unknown;
 }
 
 function TableNodeComponent({ data }: NodeProps) {
-  const { lineageNode, highlightedColumns = [], dimmed = false } = data as TableNodeData;
+  const {
+    lineageNode,
+    highlightedColumns = [],
+    dimmed = false,
+    missingUpstream = false,
+    missingDownstream = false,
+    onGapClick,
+  } = data as TableNodeData;
   const [expanded, setExpanded] = useState(false);
   const badge = TYPE_BADGES[lineageNode.type] ?? TYPE_BADGES.table;
   const borderColor = STATUS_ACCENTS[lineageNode.status] ?? STATUS_ACCENTS.ok;
@@ -43,6 +53,32 @@ function TableNodeComponent({ data }: NodeProps) {
         position={Position.Right}
         className="!w-2 !h-2 !bg-[var(--accent-teal)] !border-[var(--bg-surface)] !border-2 !-right-1"
       />
+
+      {/* Gap indicators */}
+      {missingUpstream && (
+        <button
+          className="absolute -left-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 text-[10px] leading-none hover:bg-amber-500/40 hover:scale-110 transition-all cursor-pointer z-10"
+          title="No upstream source — click to add manual edge"
+          onClick={(e) => {
+            e.stopPropagation();
+            onGapClick?.(lineageNode.id, "upstream");
+          }}
+        >
+          +
+        </button>
+      )}
+      {missingDownstream && (
+        <button
+          className="absolute -right-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 text-[10px] leading-none hover:bg-amber-500/40 hover:scale-110 transition-all cursor-pointer z-10"
+          title="No downstream consumer — click to add manual edge"
+          onClick={(e) => {
+            e.stopPropagation();
+            onGapClick?.(lineageNode.id, "downstream");
+          }}
+        >
+          +
+        </button>
+      )}
 
       {/* Header */}
       <div
