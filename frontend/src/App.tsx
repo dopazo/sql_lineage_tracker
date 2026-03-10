@@ -16,10 +16,12 @@ export function App() {
 
   if (appState === "loading") {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-slate-500">Connecting to server...</p>
+      <div className="flex items-center justify-center min-h-screen bg-[var(--bg-deep)] bg-grid">
+        <div className="text-center animate-fade-in">
+          <div className="w-10 h-10 border-2 border-[var(--accent-cyan)] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-[var(--text-muted)] font-[var(--font-mono)]">
+            Connecting to server...
+          </p>
         </div>
       </div>
     );
@@ -27,17 +29,17 @@ export function App() {
 
   if (appState === "error") {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="text-center max-w-md">
-          <p className="text-lg font-semibold text-red-600 mb-2">
+      <div className="flex items-center justify-center min-h-screen bg-[var(--bg-deep)] bg-grid">
+        <div className="text-center max-w-md animate-fade-in glass rounded-xl p-8">
+          <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+            <span className="text-red-400 text-xl">!</span>
+          </div>
+          <p className="text-lg font-semibold text-red-400 mb-2">
             Connection Error
           </p>
-          <p className="text-sm text-slate-500 mb-4">{error}</p>
-          <button
-            onClick={loadGraph}
-            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm"
-          >
-            Retry
+          <p className="text-sm text-[var(--text-muted)] mb-6">{error}</p>
+          <button onClick={loadGraph} className="btn-primary">
+            Retry Connection
           </button>
         </div>
       </div>

@@ -56,65 +56,76 @@ export function ScanSetupScreen({
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50">
-      <div className="w-full max-w-lg bg-white rounded-lg shadow-md p-6">
-        <h1 className="text-xl font-semibold text-slate-800 mb-1">
-          SQL Lineage Tracker
-        </h1>
-        <p className="text-sm text-slate-500 mb-6">
-          Configure your scan to trace column-level lineage.
-        </p>
+    <div className="flex items-center justify-center min-h-screen bg-[var(--bg-deep)] bg-grid">
+      <div className="w-full max-w-lg glass-elevated rounded-2xl p-8 animate-fade-in">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--accent-teal)] to-[var(--accent-cyan)] flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M2 4L8 1L14 4L8 7L2 4Z" fill="#0a0e1a" opacity="0.8"/>
+                <path d="M2 8L8 5L14 8L8 11L2 8Z" fill="#0a0e1a" opacity="0.6"/>
+                <path d="M2 12L8 9L14 12L8 15L2 12Z" fill="#0a0e1a" opacity="0.4"/>
+              </svg>
+            </div>
+            <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+              SQL Lineage Tracker
+            </h1>
+          </div>
+          <p className="text-sm text-[var(--text-muted)]">
+            Configure your scan to trace column-level lineage across datasets.
+          </p>
+        </div>
 
         {/* Target */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Target table/view (optional)
-          </label>
+        <div className="mb-5">
+          <label className="label-dark">Target table / view</label>
           <input
             type="text"
             value={target}
             onChange={(e) => setTarget(e.target.value)}
             placeholder="dataset.table_name"
-            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="input-dark w-full"
           />
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-[var(--text-muted)] mt-1.5">
             Trace lineage backward from this target. Leave empty to scan all
             selected datasets.
           </p>
         </div>
 
         {/* Datasets */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Datasets
-          </label>
+        <div className="mb-5">
+          <label className="label-dark">Datasets</label>
           {loading ? (
-            <div className="text-sm text-slate-400 py-4 text-center">
+            <div className="text-sm text-[var(--text-muted)] py-6 text-center">
+              <div className="w-4 h-4 border-2 border-[var(--accent-cyan)] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
               Loading datasets...
             </div>
           ) : error ? (
-            <div className="text-sm text-red-500 py-2">{error}</div>
+            <div className="text-sm text-red-400 py-2 px-3 bg-red-500/10 rounded-lg border border-red-500/20">
+              {error}
+            </div>
           ) : datasets.length === 0 ? (
-            <div className="text-sm text-slate-400 py-2">
+            <div className="text-sm text-[var(--text-muted)] py-4 text-center bg-[var(--bg-deep)] rounded-lg border border-[var(--border-subtle)]">
               No datasets found.
             </div>
           ) : (
-            <div className="border border-slate-200 rounded-md max-h-48 overflow-y-auto">
+            <div className="bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg max-h-52 overflow-y-auto">
               {datasets.map((ds) => (
                 <label
                   key={ds.id}
-                  className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer"
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-hover)] cursor-pointer transition-colors border-b border-[var(--border-subtle)] last:border-b-0"
                 >
                   <input
                     type="checkbox"
                     checked={selectedDatasets.has(ds.id)}
                     onChange={() => toggleDataset(ds.id)}
-                    className="rounded"
+                    className="rounded accent-[var(--accent-cyan)]"
                   />
-                  <span className="text-sm text-slate-700 flex-1">
+                  <span className="text-sm text-[var(--text-primary)] flex-1 font-[var(--font-mono)]">
                     {ds.id}
                   </span>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-[var(--text-muted)] font-[var(--font-mono)]">
                     {ds.table_count}T / {ds.view_count}V
                   </span>
                 </label>
@@ -125,16 +136,14 @@ export function ScanSetupScreen({
 
         {/* Depth */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Max depth (dataset hops)
-          </label>
+          <label className="label-dark">Max depth (dataset hops)</label>
           <input
             type="number"
             value={depth}
             onChange={(e) => setDepth(e.target.value)}
             placeholder="No limit"
             min={1}
-            className="w-32 px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="input-dark w-32"
           />
         </div>
 
@@ -149,9 +158,16 @@ export function ScanSetupScreen({
         <button
           onClick={handleScan}
           disabled={scanning}
-          className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-md text-sm font-medium mt-4"
+          className="btn-primary w-full mt-4"
         >
-          {scanning ? "Scanning..." : "Start Scan"}
+          {scanning ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="w-4 h-4 border-2 border-[#0a0e1a]/40 border-t-[#0a0e1a] rounded-full animate-spin" />
+              Scanning...
+            </span>
+          ) : (
+            "Start Scan"
+          )}
         </button>
       </div>
     </div>

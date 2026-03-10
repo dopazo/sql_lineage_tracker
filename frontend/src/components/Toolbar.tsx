@@ -52,19 +52,40 @@ export function Toolbar({
     setShowRescan(false);
   };
 
-  return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-slate-200 shadow-sm">
-      <h1 className="text-sm font-semibold text-slate-700 whitespace-nowrap">
-        SQL Lineage Tracker
-      </h1>
+  const stats = graph.metadata.scan_stats;
 
-      <div className="text-xs text-slate-400">
-        {graph.metadata.project_id} | {graph.metadata.scan_stats.total_nodes}{" "}
-        nodes, {graph.metadata.scan_stats.total_edges} edges
+  return (
+    <div className="flex items-center gap-4 px-5 py-2.5 glass border-b border-[var(--border-subtle)]">
+      {/* Logo + Title */}
+      <div className="flex items-center gap-2.5 shrink-0">
+        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[var(--accent-teal)] to-[var(--accent-cyan)] flex items-center justify-center">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4L8 1L14 4L8 7L2 4Z" fill="#0a0e1a" opacity="0.8"/>
+            <path d="M2 8L8 5L14 8L8 11L2 8Z" fill="#0a0e1a" opacity="0.6"/>
+            <path d="M2 12L8 9L14 12L8 15L2 12Z" fill="#0a0e1a" opacity="0.4"/>
+          </svg>
+        </div>
+        <h1 className="text-sm font-semibold text-[var(--text-primary)] whitespace-nowrap">
+          SQL Lineage
+        </h1>
+      </div>
+
+      {/* Stats */}
+      <div className="flex items-center gap-3 text-[11px] text-[var(--text-muted)] font-[var(--font-mono)] shrink-0">
+        <span className="px-2 py-1 rounded bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
+          {graph.metadata.project_id}
+        </span>
+        <span>
+          <span className="text-[var(--accent-cyan)]">{stats.total_nodes}</span> nodes
+        </span>
+        <span>
+          <span className="text-[var(--accent-teal)]">{stats.total_edges}</span> edges
+        </span>
       </div>
 
       <div className="flex-1" />
 
+      {/* Search */}
       <SearchBar
         query={searchQuery}
         onQueryChange={onSearchQueryChange}
@@ -74,68 +95,74 @@ export function Toolbar({
         onClear={onClearTrace}
       />
 
+      {/* Rescan */}
       <div className="relative">
         <button
           onClick={() => setShowRescan(!showRescan)}
           disabled={scanning}
-          className="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-md"
+          className="btn-primary text-sm py-2 px-4"
         >
-          {scanning ? "Scanning..." : "Re-scan"}
+          {scanning ? (
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 border-2 border-[#0a0e1a]/40 border-t-[#0a0e1a] rounded-full animate-spin" />
+              Scanning
+            </span>
+          ) : (
+            "Re-scan"
+          )}
         </button>
 
         {showRescan && (
-          <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-slate-200 rounded-md shadow-lg z-50 p-3">
-            <div className="space-y-2">
-              <div>
-                <label className="text-xs text-slate-500">Target</label>
-                <input
-                  type="text"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  placeholder="dataset.table"
-                  className="w-full px-2 py-1 text-sm border border-slate-300 rounded"
-                />
+          <>
+            {/* Backdrop to close */}
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowRescan(false)}
+            />
+            <div className="absolute top-full right-0 mt-2 w-80 glass-elevated rounded-xl z-50 p-4 animate-fade-in">
+              <div className="space-y-3">
+                <div>
+                  <label className="label-dark">Target</label>
+                  <input
+                    type="text"
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
+                    placeholder="dataset.table"
+                    className="input-dark w-full"
+                  />
+                </div>
+                <div>
+                  <label className="label-dark">Datasets</label>
+                  <input
+                    type="text"
+                    value={datasets}
+                    onChange={(e) => setDatasets(e.target.value)}
+                    placeholder="staging, raw_data"
+                    className="input-dark w-full"
+                  />
+                </div>
+                <div>
+                  <label className="label-dark">Depth</label>
+                  <input
+                    type="number"
+                    value={depth}
+                    onChange={(e) => setDepth(e.target.value)}
+                    placeholder="No limit"
+                    className="input-dark w-full"
+                  />
+                </div>
+                <button onClick={handleRescan} className="btn-primary w-full">
+                  Start Scan
+                </button>
               </div>
-              <div>
-                <label className="text-xs text-slate-500">
-                  Datasets (comma-separated)
-                </label>
-                <input
-                  type="text"
-                  value={datasets}
-                  onChange={(e) => setDatasets(e.target.value)}
-                  placeholder="staging, raw_data"
-                  className="w-full px-2 py-1 text-sm border border-slate-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500">
-                  Depth (dataset hops)
-                </label>
-                <input
-                  type="number"
-                  value={depth}
-                  onChange={(e) => setDepth(e.target.value)}
-                  placeholder="No limit"
-                  className="w-full px-2 py-1 text-sm border border-slate-300 rounded"
-                />
-              </div>
-              <button
-                onClick={handleRescan}
-                className="w-full px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md"
-              >
-                Start Scan
-              </button>
             </div>
-          </div>
+          </>
         )}
       </div>
 
-      <button
-        onClick={onExport}
-        className="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md"
-      >
-        Export JSON
+      {/* Export */}
+      <button onClick={onExport} className="btn-ghost text-sm">
+        Export
       </button>
     </div>
   );

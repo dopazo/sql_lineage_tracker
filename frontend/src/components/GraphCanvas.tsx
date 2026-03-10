@@ -60,16 +60,26 @@ function buildFlowElements(
     id: edge.id,
     source: edge.source_node,
     target: edge.target_node,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      width: 14,
+      height: 14,
+      color:
+        hasTrace && !traceEdgeIds?.has(edge.id)
+          ? "rgba(148,163,184,0.15)"
+          : edge.edge_type === "manual"
+            ? "#a78bfa"
+            : "#22d3ee",
+    },
     style: {
       stroke:
         hasTrace && !traceEdgeIds?.has(edge.id)
-          ? "#e2e8f0"
+          ? "rgba(148,163,184,0.15)"
           : edge.edge_type === "manual"
-            ? "#a855f7"
-            : "#94a3b8",
+            ? "#a78bfa"
+            : "#22d3ee",
       strokeWidth: hasTrace && traceEdgeIds?.has(edge.id) ? 2.5 : 1.5,
-      strokeDasharray: edge.edge_type === "manual" ? "5 5" : undefined,
+      strokeDasharray: edge.edge_type === "manual" ? "6 4" : undefined,
     },
     data: { lineageEdge: edge },
   }));
@@ -145,7 +155,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   );
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-screen bg-[var(--bg-deep)]">
       <Toolbar
         graph={graph}
         searchQuery={query}
@@ -180,13 +190,18 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             maxZoom={2}
             proOptions={{ hideAttribution: true }}
           >
-            <Background />
+            <Background
+              gap={24}
+              size={1}
+              color="rgba(148, 163, 184, 0.06)"
+            />
             <Controls />
             <MiniMap
               nodeColor={(node) => {
                 const dimmed = node.data?.dimmed as boolean;
-                return dimmed ? "#f1f5f9" : "#93c5fd";
+                return dimmed ? "rgba(30,41,59,0.5)" : "#22d3ee";
               }}
+              maskColor="rgba(10, 14, 26, 0.85)"
             />
           </ReactFlow>
         </div>

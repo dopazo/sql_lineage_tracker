@@ -5,89 +5,95 @@ interface EdgeDetailPanelProps {
   onClose: () => void;
 }
 
-const TRANSFORM_COLORS: Record<string, string> = {
-  direct: "bg-emerald-100 text-emerald-700",
-  rename: "bg-blue-100 text-blue-700",
-  expression: "bg-purple-100 text-purple-700",
-  aggregation: "bg-orange-100 text-orange-700",
-  external: "bg-pink-100 text-pink-700",
-  new_field: "bg-cyan-100 text-cyan-700",
-  unknown: "bg-slate-100 text-slate-500",
+const TRANSFORM_STYLES: Record<string, string> = {
+  direct: "bg-emerald-500/15 text-emerald-400",
+  rename: "bg-blue-500/15 text-blue-400",
+  expression: "bg-purple-500/15 text-purple-400",
+  aggregation: "bg-orange-500/15 text-orange-400",
+  external: "bg-pink-500/15 text-pink-400",
+  new_field: "bg-cyan-500/15 text-cyan-400",
+  unknown: "bg-slate-500/15 text-slate-400",
 };
 
 export function EdgeDetailPanel({ edge, onClose }: EdgeDetailPanelProps) {
   return (
-    <div className="w-80 bg-white border-l border-slate-200 overflow-y-auto flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-        <h2 className="text-sm font-semibold text-slate-800">Edge Detail</h2>
+    <div className="w-80 glass-elevated border-l border-[var(--border-subtle)] overflow-y-auto flex flex-col animate-fade-in-right">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]">
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+          Edge Detail
+        </h2>
         <button
           onClick={onClose}
-          className="text-slate-400 hover:text-slate-600 text-lg"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
         >
           &times;
         </button>
       </div>
 
-      <div className="p-4 space-y-4 flex-1">
+      <div className="p-4 space-y-5 flex-1">
+        {/* Connection */}
         <div>
-          <div className="text-xs text-slate-400 uppercase tracking-wide mb-1">
-            Connection
-          </div>
-          <div className="text-sm">
-            <span className="font-medium">{edge.source_node}</span>
-            <span className="text-slate-400 mx-2">&rarr;</span>
-            <span className="font-medium">{edge.target_node}</span>
+          <div className="label-dark">Connection</div>
+          <div className="text-sm flex items-center gap-2 font-[var(--font-mono)]">
+            <span className="text-[var(--accent-cyan)]">{edge.source_node}</span>
+            <svg width="16" height="10" viewBox="0 0 16 10" className="text-[var(--text-muted)] shrink-0">
+              <path d="M0 5h13M10 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span className="text-[var(--accent-teal)]">{edge.target_node}</span>
           </div>
         </div>
 
+        {/* Type */}
         <div>
-          <div className="text-xs text-slate-400 uppercase tracking-wide mb-1">
-            Type
-          </div>
-          <div className="text-sm">
+          <div className="label-dark">Type</div>
+          <div className="text-sm text-[var(--text-primary)]">
             {edge.edge_type}
             {edge.description && (
-              <span className="text-slate-400 ml-2">
+              <span className="text-[var(--text-muted)] ml-2">
                 &mdash; {edge.description}
               </span>
             )}
           </div>
         </div>
 
+        {/* Column Mappings */}
         <div>
-          <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">
+          <div className="label-dark">
             Column Mappings ({edge.column_mappings.length})
           </div>
           <div className="space-y-2">
             {edge.column_mappings.map((mapping, i) => (
               <div
                 key={i}
-                className="border border-slate-200 rounded p-2 text-xs"
+                className="bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg p-3 text-xs"
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-slate-600">
+                <div className="flex items-center gap-2 mb-2 font-[var(--font-mono)]">
+                  <span className="text-[var(--text-secondary)]">
                     {mapping.source_columns.join(", ") || "(none)"}
                   </span>
-                  <span className="text-slate-400">&rarr;</span>
-                  <span className="font-medium text-slate-800">
+                  <svg width="12" height="8" viewBox="0 0 16 10" className="text-[var(--text-muted)] shrink-0">
+                    <path d="M0 5h13M10 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <span className="font-medium text-[var(--text-primary)]">
                     {mapping.target_column}
                   </span>
                 </div>
                 <span
-                  className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                    TRANSFORM_COLORS[mapping.transformation] ??
-                    TRANSFORM_COLORS.unknown
+                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold font-[var(--font-mono)] uppercase tracking-wider ${
+                    TRANSFORM_STYLES[mapping.transformation] ??
+                    TRANSFORM_STYLES.unknown
                   }`}
                 >
                   {mapping.transformation}
                 </span>
                 {mapping.expression && (
-                  <code className="block mt-1 text-[11px] text-slate-500 bg-slate-50 px-1 py-0.5 rounded">
+                  <code className="block mt-2 text-[11px] text-[var(--text-secondary)] bg-[var(--bg-surface)] px-2 py-1.5 rounded font-[var(--font-mono)]">
                     {mapping.expression}
                   </code>
                 )}
                 {mapping.description && (
-                  <div className="mt-1 text-slate-400">
+                  <div className="mt-1.5 text-[var(--text-muted)]">
                     {mapping.description}
                   </div>
                 )}
