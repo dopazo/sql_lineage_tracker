@@ -753,23 +753,23 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Tests unitarios del modulo de parsing (sqlglot)
 
 **Frontend (React/bun):**
-- [ ] Setup con Vite + React + TypeScript + Tailwind + React Flow
+- [x] Setup con Vite + React + TypeScript + Tailwind + React Flow
 - [ ] Build compilado commiteado en `frontend/dist/`
-- [ ] Pantalla de configuracion de escaneo (datasets, target, profundidad) cuando no hay grafo
-- [ ] Cliente HTTP + SSE para comunicacion con API
-- [ ] Barra de progreso de escaneo (consume SSE)
-- [ ] Renderizado del DAG con layout automatico left-to-right (dagre), sin persistencia de posiciones
-- [ ] Nodos custom: nombre de tabla, dataset, tipo, indicadores de status (ok, warning, error, truncated)
-- [ ] Columnas con indicador de linaje resuelto/desconocido
-- [ ] Columnas visibles al expandir/colapsar nodo
-- [ ] Buscador con autocompletado por campo y por tabla
-- [ ] Filtrado del DAG por campo seleccionado (seguimiento de transformaciones/renames)
-- [ ] Panel de detalle de nodo (nombre, tipo, columnas, SQL, upstream/downstream)
-- [ ] Panel de detalle de arista (mapeos de columnas)
-- [ ] Distincion visual por tipo de nodo
-- [ ] Indicador visual de huecos y nodos truncados
-- [ ] Boton "Re-escanear" en toolbar con mini-panel de configuracion
-- [ ] Exportacion del grafo como JSON descargable
+- [x] Pantalla de configuracion de escaneo (datasets, target, profundidad) cuando no hay grafo
+- [x] Cliente HTTP + SSE para comunicacion con API
+- [x] Barra de progreso de escaneo (consume SSE)
+- [x] Renderizado del DAG con layout automatico left-to-right (dagre), sin persistencia de posiciones
+- [x] Nodos custom: nombre de tabla, dataset, tipo, indicadores de status (ok, warning, error, truncated)
+- [x] Columnas con indicador de linaje resuelto/desconocido
+- [x] Columnas visibles al expandir/colapsar nodo
+- [x] Buscador con autocompletado por campo y por tabla
+- [x] Filtrado del DAG por campo seleccionado (seguimiento de transformaciones/renames)
+- [x] Panel de detalle de nodo (nombre, tipo, columnas, SQL, upstream/downstream)
+- [x] Panel de detalle de arista (mapeos de columnas)
+- [x] Distincion visual por tipo de nodo
+- [x] Indicador visual de huecos y nodos truncados
+- [x] Boton "Re-escanear" en toolbar con mini-panel de configuracion
+- [x] Exportacion del grafo como JSON descargable
 
 ### Fase 2 — Uniones manuales + Filtros avanzados
 
