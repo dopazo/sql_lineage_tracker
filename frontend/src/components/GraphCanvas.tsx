@@ -20,10 +20,17 @@ import { Toolbar } from "./Toolbar";
 import { ScanProgressBar } from "./ScanProgressBar";
 import { NodeDetailPanel } from "./NodeDetailPanel";
 import { EdgeDetailPanel } from "./EdgeDetailPanel";
+import { ManualEdgeModal } from "./ManualEdgeModal";
 import { useColumnSearch } from "../hooks/useColumnSearch";
 import { useScanProgress } from "../hooks/useScanProgress";
 import { exportGraphJSON } from "../api/client";
 import type { ScanConfig } from "../types/graph";
+
+interface ManualEdgeModalState {
+  anchorNodeId: string;
+  direction: "upstream" | "downstream";
+  editingEdge?: LineageEdge;
+}
 
 const nodeTypes: NodeTypes = {
   tableNode: TableNode,
@@ -102,6 +109,26 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
 
   const [selectedNode, setSelectedNode] = useState<LineageNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<LineageEdge | null>(null);
+  const [manualEdgeModal, setManualEdgeModal] =
+    useState<ManualEdgeModalState | null>(null);
+
+  const openManualEdgeModal = useCallback(
+    (
+      anchorNodeId: string,
+      direction: "upstream" | "downstream",
+      editingEdge?: LineageEdge
+    ) => {
+      setManualEdgeModal({ anchorNodeId, direction, editingEdge });
+    },
+    []
+  );
+
+  const handleManualEdgeSaved = useCallback(() => {
+    setManualEdgeModal(null);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+    onGraphReload();
+  }, [onGraphReload]);
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () =>
@@ -207,6 +234,12 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             node={selectedNode}
             edges={graph.edges}
             onClose={() => setSelectedNode(null)}
+            onAddUpstream={(nodeId) =>
+              openManualEdgeModal(nodeId, "upstream")
+            }
+            onAddDownstream={(nodeId) =>
+              openManualEdgeModal(nodeId, "downstream")
+            }
           />
         )}
 
@@ -214,9 +247,30 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
           <EdgeDetailPanel
             edge={selectedEdge}
             onClose={() => setSelectedEdge(null)}
+            onEdit={
+              selectedEdge.edge_type === "manual"
+                ? (edge) =>
+                    openManualEdgeModal(
+                      edge.target_node,
+                      "upstream",
+                      edge
+                    )
+                : undefined
+            }
           />
         )}
       </div>
+
+      {manualEdgeModal && (
+        <ManualEdgeModal
+          graph={graph}
+          anchorNodeId={manualEdgeModal.anchorNodeId}
+          direction={manualEdgeModal.direction}
+          editingEdge={manualEdgeModal.editingEdge}
+          onClose={() => setManualEdgeModal(null)}
+          onSaved={handleManualEdgeSaved}
+        />
+      )}
     </div>
   );
 }

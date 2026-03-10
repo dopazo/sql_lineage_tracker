@@ -777,11 +777,11 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 
 - [x] Endpoints CRUD de aristas manuales (`POST/PUT/DELETE /api/manual-edge`)
 - [x] `GET /api/columns/{dataset}/{table}` — consultar columnas en BigQuery
-- [ ] Modal de creacion de union manual (upstream y downstream)
-- [ ] Autocompletado de tablas existentes en el modal
-- [ ] Tabla de mapeo con defaults por mismo nombre
-- [ ] Soporte para tipos: direct, rename, external, new_field, expression (N a 1)
-- [ ] Edicion y eliminacion de aristas manuales
+- [x] Modal de creacion de union manual (upstream y downstream)
+- [x] Autocompletado de tablas existentes en el modal
+- [x] Tabla de mapeo con defaults por mismo nombre
+- [x] Soporte para tipos: direct, rename, external, new_field, expression (N a 1)
+- [x] Edicion y eliminacion de aristas manuales
 - [x] Aristas manuales visualmente distintas (linea punteada)
 - [ ] Sugerencia de union manual al hacer clic en indicador de hueco
 - [ ] Filtro por dataset

@@ -4,6 +4,8 @@ interface NodeDetailPanelProps {
   node: LineageNode;
   edges: LineageEdge[];
   onClose: () => void;
+  onAddUpstream?: (nodeId: string) => void;
+  onAddDownstream?: (nodeId: string) => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -43,7 +45,7 @@ function EdgeList({ label, edges, dotColor, getLabel }: {
   );
 }
 
-export function NodeDetailPanel({ node, edges, onClose }: NodeDetailPanelProps) {
+export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream }: NodeDetailPanelProps) {
   const upstreamEdges = edges.filter((e) => e.target_node === node.id);
   const downstreamEdges = edges.filter((e) => e.source_node === node.id);
 
@@ -137,6 +139,28 @@ export function NodeDetailPanel({ node, edges, onClose }: NodeDetailPanelProps) 
           dotColor="bg-[var(--accent-teal)]"
           getLabel={(e) => e.target_node}
         />
+
+        {/* Manual Edge Actions */}
+        {(onAddUpstream || onAddDownstream) && (
+          <div className="flex gap-2">
+            {onAddUpstream && (
+              <button
+                onClick={() => onAddUpstream(node.id)}
+                className="btn-ghost text-xs flex-1"
+              >
+                + Upstream
+              </button>
+            )}
+            {onAddDownstream && (
+              <button
+                onClick={() => onAddDownstream(node.id)}
+                className="btn-ghost text-xs flex-1"
+              >
+                + Downstream
+              </button>
+            )}
+          </div>
+        )}
 
         {/* SQL */}
         {node.sql && (

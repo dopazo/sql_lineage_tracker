@@ -3,6 +3,7 @@ import type { LineageEdge } from "../types/graph";
 interface EdgeDetailPanelProps {
   edge: LineageEdge;
   onClose: () => void;
+  onEdit?: (edge: LineageEdge) => void;
 }
 
 const TRANSFORM_STYLES: Record<string, string> = {
@@ -15,7 +16,7 @@ const TRANSFORM_STYLES: Record<string, string> = {
   unknown: "bg-slate-500/15 text-slate-400",
 };
 
-export function EdgeDetailPanel({ edge, onClose }: EdgeDetailPanelProps) {
+export function EdgeDetailPanel({ edge, onClose, onEdit }: EdgeDetailPanelProps) {
   return (
     <div className="w-80 glass-elevated border-l border-[var(--border-subtle)] overflow-y-auto flex flex-col animate-fade-in-right">
       {/* Header */}
@@ -23,12 +24,22 @@ export function EdgeDetailPanel({ edge, onClose }: EdgeDetailPanelProps) {
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">
           Edge Detail
         </h2>
-        <button
-          onClick={onClose}
-          className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-        >
-          &times;
-        </button>
+        <div className="flex items-center gap-1">
+          {onEdit && (
+            <button
+              onClick={() => onEdit(edge)}
+              className="px-2 py-1 rounded-md text-xs text-[var(--accent-purple)] hover:bg-[var(--bg-hover)] transition-colors"
+            >
+              Edit
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+          >
+            &times;
+          </button>
+        </div>
       </div>
 
       <div className="p-4 space-y-5 flex-1">
