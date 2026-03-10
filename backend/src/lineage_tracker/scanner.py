@@ -11,13 +11,13 @@ dataset do NOT count as a hop.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections import deque
 from dataclasses import dataclass, field
 
 import sqlglot
 
 from lineage_tracker.extractor import BigQueryExtractor
-from lineage_tracker.models import ColumnInfo, LineageNode, ScanConfig
+from lineage_tracker.models import ColumnInfo, LineageNode, ProgressCallback, ScanConfig, _NOOP_PROGRESS
 
 logger = logging.getLogger(__name__)
 
@@ -108,22 +108,10 @@ def _resolve_dataset(
     return ref_dataset
 
 
-ProgressCallback = Callable[[str, str | None], None]
-"""Callable(event_type, message) used to report scan progress.
-
-Event types:
-- "scan_start": scan is beginning
-- "scan_dataset": scanning a dataset
-- "scan_node": fetching a specific node
-- "scan_complete": scan finished
-- "scan_error": a non-fatal error occurred
-"""
-
-
 def run_scoped_scan(
     extractor: BigQueryExtractor,
     config: ScanConfig,
-    progress: ProgressCallback | None = None,
+    progress: ProgressCallback = _NOOP_PROGRESS,
 ) -> ScanResult:
     """Run a scoped scan following dependencies from a target.
 
@@ -140,28 +128,24 @@ def run_scoped_scan(
     """
     result = ScanResult()
 
-    def _report(event_type: str, message: str | None = None) -> None:
-        if progress is not None:
-            progress(event_type, message)
-
-    _report("scan_start", f"Starting scan (target={config.target}, datasets={config.datasets}, depth={config.depth})")
+    progress("scan_start", f"Starting scan (target={config.target}, datasets={config.datasets}, depth={config.depth})")
 
     if config.target:
-        _scan_from_target(extractor, config, result, _report)
+        _scan_from_target(extractor, config, result, progress)
     elif config.datasets:
-        _scan_datasets(extractor, config, result, _report)
+        _scan_datasets(extractor, config, result, progress)
     else:
         # Full project scan: get all datasets, then scan each
-        _report("scan_dataset", "Listing all datasets in project...")
+        progress("scan_dataset", "Listing all datasets in project...")
         datasets = extractor.list_datasets()
         full_config = ScanConfig(
             target=None,
             datasets=[ds.id for ds in datasets],
             depth=config.depth,
         )
-        _scan_datasets(extractor, full_config, result, _report)
+        _scan_datasets(extractor, full_config, result, progress)
 
-    _report("scan_complete", f"Scan finished: {len(result.nodes)} nodes discovered, {len(result.errors)} errors")
+    progress("scan_complete", f"Scan finished: {len(result.nodes)} nodes discovered, {len(result.errors)} errors")
     return result
 
 
@@ -169,7 +153,7 @@ def _scan_from_target(
     extractor: BigQueryExtractor,
     config: ScanConfig,
     result: ScanResult,
-    report: Callable[[str, str | None], None] = lambda *_: None,
+    report: ProgressCallback = _NOOP_PROGRESS,
 ) -> None:
     """Scan backward from a target table/view."""
     assert config.target is not None
@@ -185,11 +169,11 @@ def _scan_from_target(
     report("scan_node", f"Starting backward trace from {config.target}")
 
     # Queue: nodes to visit. Key is node_id, value is _NodeRef.
-    queue: list[_NodeRef] = [_NodeRef(dataset=target_dataset, name=target_name, dataset_hops=0)]
+    queue: deque[_NodeRef] = deque([_NodeRef(dataset=target_dataset, name=target_name, dataset_hops=0)])
     visited: set[str] = set()
 
     while queue:
-        ref = queue.pop(0)
+        ref = queue.popleft()
         node_id = ref.node_id
 
         if node_id in visited:
@@ -245,7 +229,7 @@ def _scan_datasets(
     extractor: BigQueryExtractor,
     config: ScanConfig,
     result: ScanResult,
-    report: Callable[[str, str | None], None] = lambda *_: None,
+    report: ProgressCallback = _NOOP_PROGRESS,
 ) -> None:
     """Scan all specified datasets and follow external dependencies."""
     total_datasets = len(config.datasets)
@@ -264,7 +248,7 @@ def _scan_datasets(
             result.nodes[node.id] = node
 
     # Now follow dependencies outside the specified datasets
-    external_queue: list[_NodeRef] = []
+    external_queue: deque[_NodeRef] = deque()
 
     for node in list(result.nodes.values()):
         if not node.sql:
@@ -298,7 +282,7 @@ def _scan_datasets(
     # BFS for external dependencies
     visited: set[str] = set(result.nodes.keys())
     while external_queue:
-        ref = external_queue.pop(0)
+        ref = external_queue.popleft()
         node_id = ref.node_id
 
         if node_id in visited:

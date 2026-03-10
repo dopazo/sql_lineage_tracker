@@ -51,8 +51,10 @@ class ScanEventBus:
         return q
 
     def unsubscribe(self, q: asyncio.Queue[dict | None]) -> None:
-        if q in self._subscribers:
+        try:
             self._subscribers.remove(q)
+        except ValueError:
+            pass
 
     def publish(self, event_type: str, message: str | None = None) -> None:
         """Publish an event. Thread-safe — can be called from executor threads."""

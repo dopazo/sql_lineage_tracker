@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+
+ProgressCallback = Callable[[str, str | None], None]
+"""Callable(event_type, message) used to report scan/build progress."""
+
+_NOOP_PROGRESS: ProgressCallback = lambda _event, _msg=None: None
 
 
 @dataclass

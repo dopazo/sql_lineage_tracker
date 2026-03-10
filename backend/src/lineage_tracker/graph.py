@@ -11,8 +11,7 @@ Takes nodes from the scanner and builds a complete LineageGraph by:
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
-from collections.abc import Callable
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from lineage_tracker.models import (
@@ -20,8 +19,10 @@ from lineage_tracker.models import (
     LineageEdge,
     LineageGraph,
     LineageNode,
+    ProgressCallback,
     ScanConfig,
     ScanStats,
+    _NOOP_PROGRESS,
 )
 from lineage_tracker.parser import parse_view_lineage
 from lineage_tracker.scanner import ScanResult, extract_table_references
@@ -66,11 +67,11 @@ def topological_sort(nodes: dict[str, LineageNode]) -> list[str]:
                 in_degree[node_id] += 1
 
     # Kahn's algorithm
-    queue: list[str] = [nid for nid, deg in in_degree.items() if deg == 0]
+    queue: deque[str] = deque(nid for nid, deg in in_degree.items() if deg == 0)
     sorted_ids: list[str] = []
 
     while queue:
-        nid = queue.pop(0)
+        nid = queue.popleft()
         sorted_ids.append(nid)
         for dependent in dependents.get(nid, []):
             in_degree[dependent] -= 1
@@ -90,15 +91,12 @@ def topological_sort(nodes: dict[str, LineageNode]) -> list[str]:
     return sorted_ids
 
 
-ProgressCallback = Callable[[str, str | None], None]
-
-
 def build_graph(
     scan_result: ScanResult,
     config: ScanConfig,
     project_id: str,
     existing_manual_edges: list[LineageEdge] | None = None,
-    progress: ProgressCallback | None = None,
+    progress: ProgressCallback = _NOOP_PROGRESS,
 ) -> LineageGraph:
     """Build a complete LineageGraph from scan results.
 
@@ -118,10 +116,6 @@ def build_graph(
     """
     nodes = scan_result.nodes
 
-    def _report(event_type: str, message: str | None = None) -> None:
-        if progress is not None:
-            progress(event_type, message)
-
     # Build known schemas from node columns
     schemas: dict[str, dict[str, str]] = {}
     for node_id, node in nodes.items():
@@ -129,7 +123,7 @@ def build_graph(
             schemas[node_id] = {col.name: col.data_type for col in node.columns}
 
     # Sort views topologically
-    _report("build_sort", "Sorting views in topological order...")
+    progress("build_sort", "Sorting views in topological order...")
     sorted_ids = topological_sort(nodes)
     logger.info("Topological order: %d nodes sorted", len(sorted_ids))
 
@@ -148,7 +142,7 @@ def build_graph(
             continue  # Base tables have no SQL to parse
 
         parsed_count += 1
-        _report("build_parse", f"Parsing lineage for {node_id} ({parsed_count}/{total_views})")
+        progress("build_parse", f"Parsing lineage for {node_id} ({parsed_count}/{total_views})")
 
         view_schema = schemas.get(node_id, {})
         if not view_schema:
@@ -225,7 +219,7 @@ def build_graph(
     )
 
     _log_report(stats, scan_result.errors)
-    _report(
+    progress(
         "build_complete",
         f"Graph built: {stats.total_nodes} nodes, {stats.total_edges} edges",
     )
