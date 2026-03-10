@@ -5,6 +5,14 @@ const NODE_WIDTH = 280;
 const NODE_HEIGHT_BASE = 60;
 const NODE_HEIGHT_PER_COLUMN = 24;
 
+function getNodeHeight(node: Node): number {
+  const data = node.data as Record<string, unknown>;
+  const lineageNode = data.lineageNode as Record<string, unknown> | undefined;
+  const columns = lineageNode?.columns;
+  const count = Array.isArray(columns) ? columns.length : 0;
+  return NODE_HEIGHT_BASE + count * NODE_HEIGHT_PER_COLUMN;
+}
+
 export function getLayoutedElements(
   nodes: Node[],
   edges: Edge[],
@@ -20,9 +28,7 @@ export function getLayoutedElements(
   });
 
   for (const node of nodes) {
-    const columnCount = (node.data.columnCount as number) ?? 0;
-    const height = NODE_HEIGHT_BASE + columnCount * NODE_HEIGHT_PER_COLUMN;
-    g.setNode(node.id, { width: NODE_WIDTH, height });
+    g.setNode(node.id, { width: NODE_WIDTH, height: getNodeHeight(node) });
   }
 
   for (const edge of edges) {
@@ -33,8 +39,7 @@ export function getLayoutedElements(
 
   const layoutedNodes = nodes.map((node) => {
     const pos = g.node(node.id);
-    const columnCount = (node.data.columnCount as number) ?? 0;
-    const height = NODE_HEIGHT_BASE + columnCount * NODE_HEIGHT_PER_COLUMN;
+    const height = getNodeHeight(node);
     return {
       ...node,
       position: {

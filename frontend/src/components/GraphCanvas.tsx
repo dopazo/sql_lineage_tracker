@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useEffect, useCallback, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -51,38 +51,36 @@ function buildFlowElements(
         lineageNode: { ...node, id },
         highlightedColumns: getHighlightedColumns(id),
         dimmed: hasTrace && !traceNodeIds.has(id),
-        columnCount: node.columns.length,
       },
     })
   );
 
-  const flowEdges: Edge[] = graph.edges.map((edge: LineageEdge) => ({
-    id: edge.id,
-    source: edge.source_node,
-    target: edge.target_node,
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      width: 14,
-      height: 14,
-      color:
-        hasTrace && !traceEdgeIds?.has(edge.id)
-          ? "rgba(148,163,184,0.15)"
-          : edge.edge_type === "manual"
-            ? "#a78bfa"
-            : "#22d3ee",
-    },
-    style: {
-      stroke:
-        hasTrace && !traceEdgeIds?.has(edge.id)
-          ? "rgba(148,163,184,0.15)"
-          : edge.edge_type === "manual"
-            ? "#a78bfa"
-            : "#22d3ee",
-      strokeWidth: hasTrace && traceEdgeIds?.has(edge.id) ? 2.5 : 1.5,
-      strokeDasharray: edge.edge_type === "manual" ? "6 4" : undefined,
-    },
-    data: { lineageEdge: edge },
-  }));
+  const flowEdges: Edge[] = graph.edges.map((edge: LineageEdge) => {
+    const dimmed = hasTrace && !traceEdgeIds?.has(edge.id);
+    const edgeColor = dimmed
+      ? "rgba(148,163,184,0.15)"
+      : edge.edge_type === "manual"
+        ? "#a78bfa"
+        : "#22d3ee";
+
+    return {
+      id: edge.id,
+      source: edge.source_node,
+      target: edge.target_node,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 14,
+        height: 14,
+        color: edgeColor,
+      },
+      style: {
+        stroke: edgeColor,
+        strokeWidth: !dimmed && hasTrace ? 2.5 : 1.5,
+        strokeDasharray: edge.edge_type === "manual" ? "6 4" : undefined,
+      },
+      data: { lineageEdge: edge },
+    };
+  });
 
   return getLayoutedElements(flowNodes, flowEdges);
 }
@@ -119,8 +117,8 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  // Sync when initialNodes/initialEdges change
-  useMemo(() => {
+  // Sync when graph/trace changes
+  useEffect(() => {
     setNodes(initialNodes);
     setEdges(initialEdges);
   }, [initialNodes, initialEdges, setNodes, setEdges]);
@@ -176,7 +174,6 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -204,7 +201,6 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
               maskColor="rgba(10, 14, 26, 0.85)"
             />
           </ReactFlow>
-        </div>
 
         {selectedNode && (
           <NodeDetailPanel

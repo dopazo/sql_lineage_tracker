@@ -6,6 +6,43 @@ interface NodeDetailPanelProps {
   onClose: () => void;
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  ok: "text-emerald-400",
+  warning: "text-amber-400",
+  error: "text-red-400",
+  truncated: "text-blue-400",
+};
+
+function EdgeList({ label, edges, dotColor, getLabel }: {
+  label: string;
+  edges: LineageEdge[];
+  dotColor: string;
+  getLabel: (e: LineageEdge) => string;
+}) {
+  return (
+    <div>
+      <div className="label-dark">
+        {label} ({edges.length})
+      </div>
+      {edges.length === 0 ? (
+        <div className="text-xs text-[var(--text-muted)]">None</div>
+      ) : (
+        <div className="space-y-1">
+          {edges.map((e) => (
+            <div key={e.id} className="text-xs text-[var(--text-secondary)] font-[var(--font-mono)] flex items-center gap-1.5">
+              <span className={`w-1 h-1 rounded-full ${dotColor}`} />
+              {getLabel(e)}
+              {e.edge_type === "manual" && (
+                <span className="text-purple-400 text-[10px]">(manual)</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function NodeDetailPanel({ node, edges, onClose }: NodeDetailPanelProps) {
   const upstreamEdges = edges.filter((e) => e.target_node === node.id);
   const downstreamEdges = edges.filter((e) => e.source_node === node.id);
@@ -46,11 +83,7 @@ export function NodeDetailPanel({ node, edges, onClose }: NodeDetailPanelProps) 
           </div>
           <div>
             <div className="label-dark">Status</div>
-            <div className={`text-sm ${
-              node.status === "ok" ? "text-emerald-400" :
-              node.status === "warning" ? "text-amber-400" :
-              node.status === "error" ? "text-red-400" : "text-blue-400"
-            }`}>
+            <div className={`text-sm ${STATUS_COLORS[node.status] ?? "text-blue-400"}`}>
               {node.status}
             </div>
           </div>
@@ -92,47 +125,18 @@ export function NodeDetailPanel({ node, edges, onClose }: NodeDetailPanelProps) 
         </div>
 
         {/* Connections */}
-        <div>
-          <div className="label-dark">
-            Upstream ({upstreamEdges.length})
-          </div>
-          {upstreamEdges.length === 0 ? (
-            <div className="text-xs text-[var(--text-muted)]">None</div>
-          ) : (
-            <div className="space-y-1">
-              {upstreamEdges.map((e) => (
-                <div key={e.id} className="text-xs text-[var(--text-secondary)] font-[var(--font-mono)] flex items-center gap-1.5">
-                  <span className="w-1 h-1 rounded-full bg-[var(--accent-cyan)]" />
-                  {e.source_node}
-                  {e.edge_type === "manual" && (
-                    <span className="text-purple-400 text-[10px]">(manual)</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div className="label-dark">
-            Downstream ({downstreamEdges.length})
-          </div>
-          {downstreamEdges.length === 0 ? (
-            <div className="text-xs text-[var(--text-muted)]">None</div>
-          ) : (
-            <div className="space-y-1">
-              {downstreamEdges.map((e) => (
-                <div key={e.id} className="text-xs text-[var(--text-secondary)] font-[var(--font-mono)] flex items-center gap-1.5">
-                  <span className="w-1 h-1 rounded-full bg-[var(--accent-teal)]" />
-                  {e.target_node}
-                  {e.edge_type === "manual" && (
-                    <span className="text-purple-400 text-[10px]">(manual)</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <EdgeList
+          label="Upstream"
+          edges={upstreamEdges}
+          dotColor="bg-[var(--accent-cyan)]"
+          getLabel={(e) => e.source_node}
+        />
+        <EdgeList
+          label="Downstream"
+          edges={downstreamEdges}
+          dotColor="bg-[var(--accent-teal)]"
+          getLabel={(e) => e.target_node}
+        />
 
         {/* SQL */}
         {node.sql && (

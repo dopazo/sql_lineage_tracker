@@ -1,8 +1,28 @@
-import type { LineageGraph } from "../types/graph";
+import type { LineageGraph, LineageEdge } from "../types/graph";
 
 export interface ColumnTraceEntry {
   nodeId: string;
   columnName: string;
+}
+
+/**
+ * Build adjacency maps for efficient edge lookup by node.
+ */
+function buildAdjacency(edges: LineageEdge[]) {
+  const bySource = new Map<string, LineageEdge[]>();
+  const byTarget = new Map<string, LineageEdge[]>();
+
+  for (const edge of edges) {
+    let s = bySource.get(edge.source_node);
+    if (!s) { s = []; bySource.set(edge.source_node, s); }
+    s.push(edge);
+
+    let t = byTarget.get(edge.target_node);
+    if (!t) { t = []; byTarget.set(edge.target_node, t); }
+    t.push(edge);
+  }
+
+  return { bySource, byTarget };
 }
 
 /**
@@ -18,18 +38,16 @@ export function traceColumn(
     { nodeId: startNodeId, columnName: startColumn },
   ];
   const visited = new Set<string>([`${startNodeId}:${startColumn}`]);
+  const { bySource, byTarget } = buildAdjacency(graph.edges);
 
-  // Trace downstream: follow edges where source_columns includes our column
-  traceDirection(graph, startNodeId, startColumn, "downstream", trace, visited);
-
-  // Trace upstream: follow edges where target_column matches our column
-  traceDirection(graph, startNodeId, startColumn, "upstream", trace, visited);
+  traceDirection(bySource, startNodeId, startColumn, "downstream", trace, visited);
+  traceDirection(byTarget, startNodeId, startColumn, "upstream", trace, visited);
 
   return trace;
 }
 
 function traceDirection(
-  graph: LineageGraph,
+  adjacency: Map<string, LineageEdge[]>,
   nodeId: string,
   columnName: string,
   direction: "upstream" | "downstream",
@@ -42,11 +60,7 @@ function traceDirection(
 
   while (queue.length > 0) {
     const current = queue.shift()!;
-
-    const relevantEdges =
-      direction === "downstream"
-        ? graph.edges.filter((e) => e.source_node === current.nodeId)
-        : graph.edges.filter((e) => e.target_node === current.nodeId);
+    const relevantEdges = adjacency.get(current.nodeId) ?? [];
 
     for (const edge of relevantEdges) {
       for (const mapping of edge.column_mappings) {
@@ -88,17 +102,18 @@ export function getTraceNodeIds(trace: ColumnTraceEntry[]): Set<string> {
 
 /**
  * Get all edge IDs that connect nodes in a column trace.
+ * Accepts pre-computed traceNodes set to avoid recomputation.
  */
 export function getTraceEdgeIds(
   graph: LineageGraph,
-  trace: ColumnTraceEntry[]
+  trace: ColumnTraceEntry[],
+  traceNodes?: Set<string>
 ): Set<string> {
-  const traceNodes = getTraceNodeIds(trace);
+  const nodeSet = traceNodes ?? getTraceNodeIds(trace);
   const edgeIds = new Set<string>();
 
   for (const edge of graph.edges) {
-    if (traceNodes.has(edge.source_node) && traceNodes.has(edge.target_node)) {
-      // Check if any column mapping in this edge is part of the trace
+    if (nodeSet.has(edge.source_node) && nodeSet.has(edge.target_node)) {
       const sourceTraceCols = trace
         .filter((t) => t.nodeId === edge.source_node)
         .map((t) => t.columnName);

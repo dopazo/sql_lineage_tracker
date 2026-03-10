@@ -62,8 +62,8 @@ export function useColumnSearch(graph: LineageGraph | null) {
   );
 
   const traceEdgeIds = useMemo(
-    () => (graph && activeTrace ? getTraceEdgeIds(graph, activeTrace) : null),
-    [graph, activeTrace]
+    () => (graph && activeTrace && traceNodeIds ? getTraceEdgeIds(graph, activeTrace, traceNodeIds) : null),
+    [graph, activeTrace, traceNodeIds]
   );
 
   const getHighlightedColumns = useCallback(
