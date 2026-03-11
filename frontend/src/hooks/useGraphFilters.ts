@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type {
   LineageGraph,
   LineageNode,
@@ -90,14 +90,14 @@ export function useGraphFilters(graph: LineageGraph) {
   });
 
   // Reset filters when graph changes (new datasets/types may appear)
-  useMemo(() => {
+  useEffect(() => {
     setFilters({
       datasets: new Set(datasets),
       nodeTypes: new Set(nodeTypes),
       edgeTypes: new Set(ALL_EDGE_TYPES),
       maxDepth: null,
     });
-  }, [datasets.join(","), nodeTypes.join(",")]);
+  }, [datasets, nodeTypes]);
 
   const toggleDataset = useCallback((ds: string) => {
     setFilters((prev) => {
