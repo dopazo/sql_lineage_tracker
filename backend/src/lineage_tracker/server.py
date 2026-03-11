@@ -41,7 +41,7 @@ class ScanEventBus:
     def subscribe(self) -> asyncio.Queue[dict | None]:
         """Create a new subscriber queue. Returns the queue.
 
-        The subscriber receives dicts with {"event", "data"} until
+        The subscriber receives dicts with {"data"} until
         it gets ``None`` (meaning the scan is done or errored).
         """
         q: asyncio.Queue[dict | None] = asyncio.Queue()
@@ -92,7 +92,6 @@ class ScanEventBus:
                 q.put_nowait(None)
             except asyncio.QueueFull:
                 pass
-        self._history.clear()
 
     def reset(self) -> None:
         """Reset state for a new scan."""
@@ -493,7 +492,7 @@ async def _run_scan(
         )
 
         app.state.graph = graph
-        save_graph(graph, app.state.data_dir, app.state.project_id)
+        await _save_current_graph_async(app)
 
         # Print console report
         from lineage_tracker.graph import format_scan_report
