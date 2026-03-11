@@ -48,15 +48,7 @@ const TRANSFORMATIONS: { value: TransformationType; label: string }[] = [
   { value: "unknown", label: "Unknown" },
 ];
 
-const TRANSFORM_COLORS: Record<string, string> = {
-  direct: "bg-emerald-500/15 text-emerald-400",
-  rename: "bg-blue-500/15 text-blue-400",
-  expression: "bg-purple-500/15 text-purple-400",
-  aggregation: "bg-orange-500/15 text-orange-400",
-  external: "bg-pink-500/15 text-pink-400",
-  new_field: "bg-cyan-500/15 text-cyan-400",
-  unknown: "bg-slate-500/15 text-slate-400",
-};
+import { TRANSFORM_STYLES } from "../constants/transforms";
 
 /* ── Helpers ─────────────────────────────────────────────── */
 
@@ -258,17 +250,19 @@ export function ManualEdgeModal({
   // Try fetching columns from BigQuery if the other node is known but has no columns
   useEffect(() => {
     if (!otherNodeId || isEdit) return;
-    const otherNode =
-      direction === "upstream"
-        ? graph.nodes[otherNodeId]
-        : graph.nodes[otherNodeId];
-    if (otherNode && otherNode.columns.length === 0) {
-      setLoadingColumns(true);
-      getColumns(otherNode.dataset, otherNode.name)
-        .catch(() => [])
-        .finally(() => setLoadingColumns(false));
-    }
-  }, [otherNodeId, direction, graph.nodes, isEdit]);
+    const otherNode = graph.nodes[otherNodeId];
+    if (!otherNode || otherNode.columns.length > 0) return;
+    setLoadingColumns(true);
+    getColumns(otherNode.dataset, otherNode.name)
+      .then((cols) => {
+        // Merge fetched columns into the node so auto-mapping can use them
+        if (cols.length > 0) {
+          otherNode.columns = cols;
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingColumns(false));
+  }, [otherNodeId, graph.nodes, isEdit]);
 
   /* ── Mapping Row Helpers ─────────────────────────────── */
   const updateMapping = useCallback(
@@ -649,7 +643,7 @@ function MappingRowEditor({
       <div className="mt-2">
         <span
           className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold font-[var(--font-mono)] uppercase tracking-wider ${
-            TRANSFORM_COLORS[row.transformation] ?? TRANSFORM_COLORS.unknown
+            TRANSFORM_STYLES[row.transformation] ?? TRANSFORM_STYLES.unknown
           }`}
         >
           {row.transformation}

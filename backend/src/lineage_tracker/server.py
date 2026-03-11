@@ -18,7 +18,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from lineage_tracker.extractor import BigQueryExtractor
 from lineage_tracker.models import ColumnMapping, LineageEdge, LineageGraph, ScanConfig
-from lineage_tracker.persistence import graph_to_dict, load_graph, save_graph
+from lineage_tracker.persistence import _edge_to_dict, graph_to_dict, load_graph, save_graph
 
 logger = logging.getLogger(__name__)
 
@@ -223,27 +223,10 @@ def create_app(
 
     @app.post("/api/manual-edge")
     async def create_manual_edge(request: Request) -> JSONResponse:
-        """Create a manual edge between two nodes.
-
-        Body: {
-            source_node: string,
-            target_node: string,
-            description?: string,
-            column_mappings: [{
-                source_columns: string[],
-                target_column: string,
-                transformation: string,
-                expression?: string,
-                description?: string,
-            }]
-        }
-        """
-        graph: LineageGraph | None = app.state.graph
-        if graph is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "No graph loaded"},
-            )
+        """Create a manual edge between two nodes."""
+        graph = _require_graph(app)
+        if isinstance(graph, JSONResponse):
+            return graph
 
         body = await request.json()
         source_node = body.get("source_node")
@@ -273,46 +256,29 @@ def create_app(
                 counter += 1
             edge_id = f"{edge_id}_{counter}"
 
-        mappings = [
-            ColumnMapping(
-                source_columns=m.get("source_columns", []),
-                target_column=m["target_column"],
-                transformation=m.get("transformation", "unknown"),
-                expression=m.get("expression"),
-                description=m.get("description"),
-            )
-            for m in body.get("column_mappings", [])
-        ]
-
         edge = LineageEdge(
             id=edge_id,
             source_node=source_node,
             target_node=target_node,
             edge_type="manual",
             description=body.get("description"),
-            column_mappings=mappings,
+            column_mappings=_parse_column_mappings(body.get("column_mappings", [])),
         )
 
         graph.edges.append(edge)
-        _save_current_graph(app)
+        await _save_current_graph_async(app)
 
         return JSONResponse(
             status_code=201,
-            content=_edge_to_response(edge),
+            content=_edge_to_dict(edge),
         )
 
     @app.put("/api/manual-edge/{edge_id:path}")
     async def update_manual_edge(edge_id: str, request: Request) -> JSONResponse:
-        """Update an existing manual edge.
-
-        Body: same as POST (partial updates supported).
-        """
-        graph: LineageGraph | None = app.state.graph
-        if graph is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "No graph loaded"},
-            )
+        """Update an existing manual edge."""
+        graph = _require_graph(app)
+        if isinstance(graph, JSONResponse):
+            return graph
 
         edge = _find_manual_edge(graph, edge_id)
         if edge is None:
@@ -328,30 +294,18 @@ def create_app(
             edge.description = body["description"]
 
         if "column_mappings" in body:
-            edge.column_mappings = [
-                ColumnMapping(
-                    source_columns=m.get("source_columns", []),
-                    target_column=m["target_column"],
-                    transformation=m.get("transformation", "unknown"),
-                    expression=m.get("expression"),
-                    description=m.get("description"),
-                )
-                for m in body["column_mappings"]
-            ]
+            edge.column_mappings = _parse_column_mappings(body["column_mappings"])
 
-        _save_current_graph(app)
+        await _save_current_graph_async(app)
 
-        return JSONResponse(content=_edge_to_response(edge))
+        return JSONResponse(content=_edge_to_dict(edge))
 
     @app.delete("/api/manual-edge/{edge_id:path}")
     async def delete_manual_edge(edge_id: str) -> JSONResponse:
         """Delete a manual edge."""
-        graph: LineageGraph | None = app.state.graph
-        if graph is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "No graph loaded"},
-            )
+        graph = _require_graph(app)
+        if isinstance(graph, JSONResponse):
+            return graph
 
         edge = _find_manual_edge(graph, edge_id)
         if edge is None:
@@ -361,7 +315,7 @@ def create_app(
             )
 
         graph.edges.remove(edge)
-        _save_current_graph(app)
+        await _save_current_graph_async(app)
 
         return JSONResponse(content={"status": "deleted", "id": edge_id})
 
@@ -449,6 +403,14 @@ def create_app(
     return app
 
 
+def _require_graph(app: FastAPI) -> LineageGraph | JSONResponse:
+    """Return the current graph, or a 400 JSONResponse if none is loaded."""
+    graph: LineageGraph | None = app.state.graph
+    if graph is None:
+        return JSONResponse(status_code=400, content={"error": "No graph loaded"})
+    return graph
+
+
 def _find_manual_edge(graph: LineageGraph, edge_id: str) -> LineageEdge | None:
     """Find a manual edge by ID, or return None."""
     for edge in graph.edges:
@@ -457,32 +419,28 @@ def _find_manual_edge(graph: LineageGraph, edge_id: str) -> LineageEdge | None:
     return None
 
 
-def _save_current_graph(app: FastAPI) -> None:
-    """Persist the current graph to disk."""
+def _parse_column_mappings(raw: list[dict]) -> list[ColumnMapping]:
+    """Parse a list of raw dicts into ColumnMapping objects."""
+    return [
+        ColumnMapping(
+            source_columns=m.get("source_columns", []),
+            target_column=m["target_column"],
+            transformation=m.get("transformation", "unknown"),
+            expression=m.get("expression"),
+            description=m.get("description"),
+        )
+        for m in raw
+    ]
+
+
+async def _save_current_graph_async(app: FastAPI) -> None:
+    """Persist the current graph to disk without blocking the event loop."""
     graph: LineageGraph | None = app.state.graph
     if graph is not None:
-        save_graph(graph, app.state.data_dir, app.state.project_id)
-
-
-def _edge_to_response(edge: LineageEdge) -> dict:
-    """Convert a LineageEdge to a JSON-serializable dict for API responses."""
-    return {
-        "id": edge.id,
-        "source_node": edge.source_node,
-        "target_node": edge.target_node,
-        "edge_type": edge.edge_type,
-        "description": edge.description,
-        "column_mappings": [
-            {
-                "source_columns": m.source_columns,
-                "target_column": m.target_column,
-                "transformation": m.transformation,
-                "expression": m.expression,
-                "description": m.description,
-            }
-            for m in edge.column_mappings
-        ],
-    }
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, save_graph, graph, app.state.data_dir, app.state.project_id
+        )
 
 
 async def _run_scan(
