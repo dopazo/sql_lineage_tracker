@@ -845,6 +845,202 @@ class TestWindowFunctions:
             assert "OVER" in m.expression, f"{col} expression should contain OVER"
 
 
+class TestUnnest:
+    """UNNEST — flattening arrays in BigQuery."""
+
+    def test_simple_unnest(self):
+        """Basic UNNEST: flatten array column into rows."""
+        sql = "SELECT id, element FROM mydb.users, UNNEST(tags) AS element"
+        schemas = {
+            "mydb.users": {"id": "INT64", "tags": "ARRAY<STRING>"},
+            "target.v": {"id": "INT64", "element": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        m = _get_mapping(edges, "mydb.users", "id")
+        assert m.transformation == "direct"
+        m = _get_mapping(edges, "mydb.users", "element")
+        assert m.source_columns == ["tags"]
+        assert m.transformation == "expression"
+        assert "UNNEST" in m.expression
+
+    def test_cross_join_unnest(self):
+        """Explicit CROSS JOIN UNNEST syntax."""
+        sql = "SELECT id, tag FROM mydb.users CROSS JOIN UNNEST(tags) AS tag"
+        schemas = {
+            "mydb.users": {"id": "INT64", "tags": "ARRAY<STRING>"},
+            "target.v": {"id": "INT64", "tag": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.users", "tag")
+        assert m.source_columns == ["tags"]
+        assert m.transformation == "expression"
+        assert "UNNEST" in m.expression
+
+    def test_unnest_struct_fields(self):
+        """UNNEST of struct array, accessing struct fields."""
+        sql = "SELECT id, e.name, e.value FROM mydb.events, UNNEST(properties) AS e"
+        schemas = {
+            "mydb.events": {
+                "id": "INT64",
+                "properties": "ARRAY<STRUCT<name STRING, value STRING>>",
+            },
+            "target.v": {"id": "INT64", "name": "STRING", "value": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        m_name = _get_mapping(edges, "mydb.events", "name")
+        assert m_name.source_columns == ["properties"]
+        assert m_name.transformation == "expression"
+        # Expression should not contain internal _0. prefix
+        assert "_0." not in m_name.expression
+
+    def test_unnest_with_aggregation(self):
+        """UNNEST followed by aggregation."""
+        sql = "SELECT id, COUNT(tag) AS tag_count FROM mydb.users, UNNEST(tags) AS tag GROUP BY id"
+        schemas = {
+            "mydb.users": {"id": "INT64", "tags": "ARRAY<STRING>"},
+            "target.v": {"id": "INT64", "tag_count": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.users", "tag_count")
+        assert m.transformation == "aggregation"
+        # Expression should not contain internal _0. prefix
+        assert "_0." not in m.expression
+        assert "COUNT" in m.expression
+
+    def test_multiple_unnest(self):
+        """Multiple UNNEST in the same query."""
+        sql = "SELECT id, tag, score FROM mydb.users, UNNEST(tags) AS tag, UNNEST(scores) AS score"
+        schemas = {
+            "mydb.users": {
+                "id": "INT64",
+                "tags": "ARRAY<STRING>",
+                "scores": "ARRAY<FLOAT64>",
+            },
+            "target.v": {"id": "INT64", "tag": "STRING", "score": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m_tag = _get_mapping(edges, "mydb.users", "tag")
+        assert m_tag.source_columns == ["tags"]
+        m_score = _get_mapping(edges, "mydb.users", "score")
+        assert m_score.source_columns == ["scores"]
+
+    def test_left_join_unnest(self):
+        """LEFT JOIN UNNEST preserves rows without array elements."""
+        sql = "SELECT u.id, tag FROM mydb.users u LEFT JOIN UNNEST(u.tags) AS tag ON TRUE"
+        schemas = {
+            "mydb.users": {"id": "INT64", "tags": "ARRAY<STRING>"},
+            "target.v": {"id": "INT64", "tag": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.users", "tag")
+        assert m.source_columns == ["tags"]
+        assert m.transformation == "expression"
+
+    def test_unnest_in_cte(self):
+        """UNNEST inside a CTE, consumed by outer query."""
+        sql = """
+        WITH expanded AS (
+            SELECT id, tag FROM mydb.users, UNNEST(tags) AS tag
+        )
+        SELECT id, UPPER(tag) AS tag_upper FROM expanded
+        """
+        schemas = {
+            "mydb.users": {"id": "INT64", "tags": "ARRAY<STRING>"},
+            "target.v": {"id": "INT64", "tag_upper": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        assert edges[0].source_node == "mydb.users"
+        m = _get_mapping(edges, "mydb.users", "tag_upper")
+        assert m.transformation == "expression"
+        assert "UPPER" in m.expression
+
+    def test_unnest_with_offset(self):
+        """UNNEST WITH OFFSET produces an index column."""
+        sql = "SELECT id, tag, pos FROM mydb.users, UNNEST(tags) AS tag WITH OFFSET AS pos"
+        schemas = {
+            "mydb.users": {"id": "INT64", "tags": "ARRAY<STRING>"},
+            "target.v": {"id": "INT64", "tag": "STRING", "pos": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m_tag = _get_mapping(edges, "mydb.users", "tag")
+        assert m_tag.source_columns == ["tags"]
+        # pos should also be traced (it comes from the UNNEST operation)
+        m_pos = _get_mapping(edges, "mydb.users", "pos")
+        assert m_pos is not None
+
+
+class TestStruct:
+    """STRUCT — accessing and creating structured types."""
+
+    def test_struct_field_access(self):
+        """Accessing fields of a STRUCT column."""
+        sql = "SELECT address.city, address.state FROM mydb.users"
+        schemas = {
+            "mydb.users": {"address": "STRUCT<city STRING, state STRING>"},
+            "target.v": {"city": "STRING", "state": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        m_city = _get_mapping(edges, "mydb.users", "city")
+        assert m_city.source_columns == ["address"]
+        assert m_city.transformation == "expression"
+        assert "address" in m_city.expression.lower()
+
+    def test_struct_creation(self):
+        """Creating a STRUCT in SELECT."""
+        sql = "SELECT STRUCT(a, b) AS s FROM mydb.t1"
+        schemas = {
+            "mydb.t1": {"a": "INT64", "b": "STRING"},
+            "target.v": {"s": "STRUCT<a INT64, b STRING>"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.t1", "s")
+        assert m.transformation == "expression"
+        assert "STRUCT" in m.expression
+        assert "a" in m.source_columns
+        assert "b" in m.source_columns
+
+    def test_struct_field_in_expression(self):
+        """STRUCT field used in an expression."""
+        sql = "SELECT UPPER(address.city) AS city_upper FROM mydb.users"
+        schemas = {
+            "mydb.users": {"address": "STRUCT<city STRING, state STRING>"},
+            "target.v": {"city_upper": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.users", "city_upper")
+        assert m.transformation == "expression"
+        assert "UPPER" in m.expression
+        assert m.source_columns == ["address"]
+
+    def test_nested_struct_access(self):
+        """Accessing nested STRUCT fields (address.city.zip_code)."""
+        sql = "SELECT address.city.zip_code AS zip FROM mydb.users"
+        schemas = {
+            "mydb.users": {"address": "STRUCT<city STRUCT<zip_code STRING, name STRING>>"},
+            "target.v": {"zip": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.users", "zip")
+        assert m.source_columns == ["address"]
+        assert m.transformation == "expression"
+
+    def test_struct_field_with_alias(self):
+        """STRUCT field access with explicit alias."""
+        sql = "SELECT address.city AS user_city FROM mydb.users"
+        schemas = {
+            "mydb.users": {"address": "STRUCT<city STRING, state STRING>"},
+            "target.v": {"user_city": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.users", "user_city")
+        assert m.source_columns == ["address"]
+        assert m.transformation == "expression"
+
+
 class TestCreateTableAsSelect:
     """CREATE TABLE AS SELECT support."""
 

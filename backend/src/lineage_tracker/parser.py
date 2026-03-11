@@ -6,12 +6,14 @@ producing LineageEdge objects with ColumnMapping details.
 Supports: SELECT, alias/rename, JOIN, CTE, expressions, aggregations,
 SELECT * with schema expansion, UNION ALL/UNION (columns by position),
 subqueries (derived tables, scalar subqueries, WHERE IN/EXISTS, nested),
-window functions (ROW_NUMBER, RANK, SUM OVER, LAG/LEAD, etc.).
+window functions (ROW_NUMBER, RANK, SUM OVER, LAG/LEAD, etc.),
+UNNEST (array flattening), STRUCT (field access and creation).
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 
 import sqlglot
@@ -95,7 +97,7 @@ def parse_view_lineage(
             continue
 
         # Collect leaf nodes and all intermediate expressions in the chain
-        leaves, chain_exprs = _collect_leaves_and_exprs(result)
+        leaves, chain_exprs, has_unnest = _collect_leaves_and_exprs(result)
 
         if not leaves:
             # No source traced (e.g., COUNT(*) or literal)
@@ -115,6 +117,14 @@ def parse_view_lineage(
             transformation, expr_str = _classify_transformation(
                 chain_exprs, col, source_cols
             )
+            # Improve expression strings for UNNEST paths
+            if has_unnest:
+                expr_str = _build_unnest_expression(
+                    transformation, expr_str, source_cols, col
+                )
+            # Clean internal sqlglot aliases from expression strings
+            if expr_str:
+                expr_str = _clean_expression(expr_str)
             edge_data[source_table_id][col] = ColumnMapping(
                 source_columns=source_cols,
                 target_column=col,
@@ -231,30 +241,33 @@ def _get_cte_names(sql: str) -> set[str]:
     return names
 
 
-def _collect_leaves_and_exprs(node) -> tuple[list, list[exp.Expression]]:
-    """Recursively collect leaf nodes and all intermediate expressions.
+def _collect_leaves_and_exprs(node) -> tuple[list, list[exp.Expression], bool]:
+    """Recursively collect leaf nodes, intermediate expressions, and UNNEST info.
 
     Returns:
-        (leaves, chain_expressions) where chain_expressions includes
-        all expressions encountered along the lineage path.
+        (leaves, chain_expressions, has_unnest) where chain_expressions includes
+        all expressions encountered along the lineage path, and has_unnest
+        indicates if the path traverses an UNNEST operation.
     """
     all_exprs: list[exp.Expression] = [node.expression]
     leaves: list = []
+    has_unnest = isinstance(node.source, exp.Unnest)
 
     if not node.downstream:
         if isinstance(node.source, exp.Table) and node.source.name:
             leaves.append(node)
-        return leaves, all_exprs
+        return leaves, all_exprs, has_unnest
 
     for child in node.downstream:
-        child_leaves, child_exprs = _collect_leaves_and_exprs(child)
+        child_leaves, child_exprs, child_unnest = _collect_leaves_and_exprs(child)
         all_exprs.extend(child_exprs)
+        has_unnest = has_unnest or child_unnest
         if child_leaves:
             leaves.extend(child_leaves)
         elif isinstance(child.source, exp.Table) and child.source.name:
             leaves.append(child)
 
-    return leaves, all_exprs
+    return leaves, all_exprs, has_unnest
 
 
 def _extract_table_id(source: exp.Expression) -> str | None:
@@ -364,6 +377,56 @@ def _is_expression(expr: exp.Expression) -> bool:
     if isinstance(expr, (exp.Func, exp.Anonymous, exp.Binary)):
         return True
     return not isinstance(expr, (exp.Column, exp.Literal))
+
+
+def _build_unnest_expression(
+    transformation: str,
+    expr_str: str | None,
+    source_cols: list[str],
+    target_col: str,
+) -> str | None:
+    """Build a descriptive expression string for UNNEST lineage paths.
+
+    When the lineage traverses UNNEST, the raw expression from sqlglot
+    is often just the alias name (e.g., "tag"). This replaces it with
+    a more informative expression like "UNNEST(tags)".
+
+    For aggregations/expressions that already contain meaningful function
+    calls (e.g., "COUNT(tag)"), the string is returned as-is (internal
+    alias cleanup is handled separately by _clean_expression).
+    """
+    if transformation in ("direct", "rename") or expr_str is None:
+        return expr_str
+
+    # If the expression is just the alias/column name (trivial), replace with UNNEST()
+    stripped = expr_str.strip()
+    is_trivial = (
+        stripped == target_col
+        or stripped.isidentifier()
+        and "(" not in stripped
+        and "." not in stripped
+    )
+    if is_trivial and len(source_cols) == 1:
+        return f"UNNEST({source_cols[0]})"
+
+    return expr_str
+
+
+# Pattern for internal sqlglot-generated aliases like _0., _1., _t0., etc.
+_INTERNAL_ALIAS_RE = re.compile(r"\b_\d+\.")
+
+
+def _clean_expression(expr_str: str) -> str:
+    """Remove internal sqlglot-generated aliases from expression strings.
+
+    sqlglot introduces aliases like _0, _t0 for UNNEST and subquery
+    rewrites. These are not meaningful to the user.
+
+    Examples:
+        "COUNT(_0.tag)"  -> "COUNT(tag)"
+        "_0.e.name"      -> "e.name"
+    """
+    return _INTERNAL_ALIAS_RE.sub("", expr_str)
 
 
 def _handle_no_source(
