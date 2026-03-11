@@ -788,7 +788,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Filtro por tipo de nodo
 - [x] Filtro por tipo de arista (automatica / manual)
 - [x] Filtro por profundidad (niveles upstream/downstream)
-- [ ] Drag and drop de nodos con persistencia de posiciones
+- [x] Drag and drop de nodos con persistencia de posiciones
 
 ### Fase 3 — Cobertura SQL extendida + Polish
 
