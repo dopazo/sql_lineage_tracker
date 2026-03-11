@@ -653,6 +653,198 @@ class TestSubqueries:
         assert m.source_columns == ["id"]
 
 
+class TestWindowFunctions:
+    """Window functions (OVER clause) — classified as expression, not aggregation."""
+
+    def test_row_number(self):
+        """ROW_NUMBER() OVER (...) is an expression, not aggregation."""
+        sql = "SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM mydb.users"
+        schemas = {
+            "mydb.users": {"id": "INT64"},
+            "target.v": {"id": "INT64", "rn": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        m = _get_mapping(edges, "mydb.users", "rn")
+        assert m is not None
+        assert m.transformation == "expression"
+        assert "ROW_NUMBER" in m.expression
+        assert "OVER" in m.expression
+
+    def test_sum_over_partition(self):
+        """SUM(x) OVER (...) should be expression, NOT aggregation."""
+        sql = (
+            "SELECT user_id, amount, "
+            "SUM(amount) OVER (PARTITION BY user_id) AS running_total "
+            "FROM mydb.orders"
+        )
+        schemas = {
+            "mydb.orders": {"user_id": "INT64", "amount": "FLOAT64"},
+            "target.v": {"user_id": "INT64", "amount": "FLOAT64", "running_total": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.orders", "running_total")
+        assert m is not None
+        assert m.transformation == "expression"
+        assert "SUM" in m.expression
+        assert "OVER" in m.expression
+
+    def test_rank_and_dense_rank(self):
+        """RANK() and DENSE_RANK() window functions."""
+        sql = (
+            "SELECT id, "
+            "RANK() OVER (ORDER BY score DESC) AS rnk, "
+            "DENSE_RANK() OVER (ORDER BY score DESC) AS drnk "
+            "FROM mydb.scores"
+        )
+        schemas = {
+            "mydb.scores": {"id": "INT64", "score": "FLOAT64"},
+            "target.v": {"id": "INT64", "rnk": "INT64", "drnk": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m_rnk = _get_mapping(edges, "mydb.scores", "rnk")
+        assert m_rnk is not None
+        assert m_rnk.transformation == "expression"
+        assert "RANK" in m_rnk.expression
+
+        m_drnk = _get_mapping(edges, "mydb.scores", "drnk")
+        assert m_drnk is not None
+        assert m_drnk.transformation == "expression"
+        assert "DENSE_RANK" in m_drnk.expression
+
+    def test_lag_lead(self):
+        """LAG/LEAD window functions track source column."""
+        sql = (
+            "SELECT date, price, "
+            "LAG(price, 1) OVER (ORDER BY date) AS prev_price "
+            "FROM mydb.stocks"
+        )
+        schemas = {
+            "mydb.stocks": {"date": "DATE", "price": "FLOAT64"},
+            "target.v": {"date": "DATE", "price": "FLOAT64", "prev_price": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.stocks", "prev_price")
+        assert m is not None
+        assert m.transformation == "expression"
+        assert "LAG" in m.expression
+
+    def test_count_over(self):
+        """COUNT(*) OVER (...) is expression, not aggregation."""
+        sql = (
+            "SELECT id, "
+            "COUNT(*) OVER (PARTITION BY category) AS category_count "
+            "FROM mydb.products"
+        )
+        schemas = {
+            "mydb.products": {"id": "INT64", "category": "STRING"},
+            "target.v": {"id": "INT64", "category_count": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.products", "category_count")
+        assert m is not None
+        assert m.transformation == "expression"
+        assert "OVER" in m.expression
+
+    def test_window_alongside_regular_aggregation(self):
+        """Query with GROUP BY aggregation AND window function over the result."""
+        sql = (
+            "SELECT category, SUM(amount) AS total, "
+            "RANK() OVER (ORDER BY SUM(amount) DESC) AS rnk "
+            "FROM mydb.sales GROUP BY category"
+        )
+        schemas = {
+            "mydb.sales": {"category": "STRING", "amount": "FLOAT64"},
+            "target.v": {"category": "STRING", "total": "FLOAT64", "rnk": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m_total = _get_mapping(edges, "mydb.sales", "total")
+        assert m_total is not None
+        assert m_total.transformation == "aggregation"
+
+        m_rnk = _get_mapping(edges, "mydb.sales", "rnk")
+        assert m_rnk is not None
+        assert m_rnk.transformation == "expression"
+        assert "RANK" in m_rnk.expression
+
+    def test_window_function_in_cte(self):
+        """Window function inside a CTE, passed through to outer query."""
+        sql = """
+        WITH ranked AS (
+            SELECT id, name, ROW_NUMBER() OVER (ORDER BY id) AS rn
+            FROM mydb.users
+        )
+        SELECT id, name, rn FROM ranked WHERE rn = 1
+        """
+        schemas = {
+            "mydb.users": {"id": "INT64", "name": "STRING"},
+            "target.v": {"id": "INT64", "name": "STRING", "rn": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        assert edges[0].source_node == "mydb.users"
+        m = _get_mapping(edges, "mydb.users", "rn")
+        assert m is not None
+        assert m.transformation == "expression"
+        assert "ROW_NUMBER" in m.expression
+
+    def test_window_function_in_subquery(self):
+        """Window function inside a subquery."""
+        sql = """SELECT id, rn FROM (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY id DESC) AS rn
+            FROM mydb.users
+        ) ranked WHERE rn <= 10"""
+        schemas = {
+            "mydb.users": {"id": "INT64"},
+            "target.v": {"id": "INT64", "rn": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        m = _get_mapping(edges, "mydb.users", "rn")
+        assert m is not None
+        assert m.transformation == "expression"
+
+    def test_window_with_expression_arg(self):
+        """Window function with an expression as argument: SUM(price * qty) OVER (...)."""
+        sql = (
+            "SELECT order_id, "
+            "SUM(price * quantity) OVER (PARTITION BY customer_id ORDER BY order_date) AS running_total "
+            "FROM mydb.order_items"
+        )
+        schemas = {
+            "mydb.order_items": {
+                "order_id": "INT64", "price": "FLOAT64",
+                "quantity": "INT64", "customer_id": "INT64", "order_date": "DATE",
+            },
+            "target.v": {"order_id": "INT64", "running_total": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.order_items", "running_total")
+        assert m is not None
+        assert m.transformation == "expression"
+        assert "OVER" in m.expression
+
+    def test_multiple_window_functions(self):
+        """Multiple window functions in the same SELECT."""
+        sql = (
+            "SELECT id, "
+            "ROW_NUMBER() OVER (ORDER BY id) AS rn, "
+            "LAG(score) OVER (ORDER BY id) AS prev_score, "
+            "AVG(score) OVER (PARTITION BY category) AS avg_score "
+            "FROM mydb.items"
+        )
+        schemas = {
+            "mydb.items": {"id": "INT64", "score": "FLOAT64", "category": "STRING"},
+            "target.v": {"id": "INT64", "rn": "INT64", "prev_score": "FLOAT64", "avg_score": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        for col in ("rn", "prev_score", "avg_score"):
+            m = _get_mapping(edges, "mydb.items", col)
+            assert m is not None, f"Missing mapping for {col}"
+            assert m.transformation == "expression", f"{col} should be expression, got {m.transformation}"
+            assert "OVER" in m.expression, f"{col} expression should contain OVER"
+
+
 class TestCreateTableAsSelect:
     """CREATE TABLE AS SELECT support."""
 
