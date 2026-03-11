@@ -47,22 +47,29 @@ export function startScan(config: ScanConfig): Promise<{ status: string }> {
 
 export function subscribeScanEvents(
   onEvent: (event: ScanEvent) => void,
-  onError?: (error: Event) => void
+  onError?: () => void
 ): () => void {
   const source = new EventSource(`${BASE_URL}/scan/events`);
+  let completed = false;
 
   source.onmessage = (e) => {
     try {
       const event: ScanEvent = JSON.parse(e.data);
+      if (event.type === "complete" || event.type === "error") {
+        completed = true;
+      }
       onEvent(event);
     } catch {
       onEvent({ type: "progress", message: e.data });
     }
   };
 
-  source.onerror = (e) => {
-    onError?.(e);
+  source.onerror = () => {
     source.close();
+    // Only report error if we never got a complete/error event
+    if (!completed) {
+      onError?.();
+    }
   };
 
   return () => source.close();

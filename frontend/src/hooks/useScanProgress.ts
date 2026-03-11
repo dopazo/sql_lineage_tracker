@@ -7,12 +7,14 @@ export function useScanProgress() {
   const [messages, setMessages] = useState<string[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const doneRef = useRef(false);
 
   const runScan = useCallback(
     async (config: ScanConfig, onComplete: () => void) => {
       setScanning(true);
       setMessages([]);
       setScanError(null);
+      doneRef.current = false;
 
       try {
         await startScan(config);
@@ -22,20 +24,27 @@ export function useScanProgress() {
             setMessages((prev) => [...prev, event.message]);
 
             if (event.type === "complete") {
+              doneRef.current = true;
               setScanning(false);
-              cleanupRef.current?.();
+              const cleanup = cleanupRef.current;
               cleanupRef.current = null;
+              cleanup?.();
               onComplete();
             } else if (event.type === "error") {
+              doneRef.current = true;
               setScanError(event.message);
               setScanning(false);
-              cleanupRef.current?.();
+              const cleanup = cleanupRef.current;
               cleanupRef.current = null;
+              cleanup?.();
             }
           },
           () => {
-            setScanError("Lost connection to server");
-            setScanning(false);
+            // Only treat as error if scan hasn't already completed/errored
+            if (!doneRef.current) {
+              setScanError("Lost connection to server");
+              setScanning(false);
+            }
           }
         );
       } catch (err) {
@@ -49,6 +58,7 @@ export function useScanProgress() {
   );
 
   const cancelScan = useCallback(() => {
+    doneRef.current = true;
     cleanupRef.current?.();
     cleanupRef.current = null;
     setScanning(false);
