@@ -4,7 +4,8 @@ Parses SQL view definitions and extracts column-level lineage,
 producing LineageEdge objects with ColumnMapping details.
 
 Supports: SELECT, alias/rename, JOIN, CTE, expressions, aggregations,
-SELECT * with schema expansion, UNION ALL/UNION (columns by position).
+SELECT * with schema expansion, UNION ALL/UNION (columns by position),
+subqueries (derived tables, scalar subqueries, WHERE IN/EXISTS, nested).
 """
 
 from __future__ import annotations
