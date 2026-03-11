@@ -414,7 +414,6 @@ class TestScanEventBus:
 
         assert not q.empty()
         event = q.get_nowait()
-        assert event["event"] == "scan_start"
         data = json.loads(event["data"])
         assert data["type"] == "scan_start"
         assert data["message"] == "Starting scan"
@@ -466,5 +465,5 @@ class TestScanEventBus:
         assert not q.empty()
         e1 = q.get_nowait()
         e2 = q.get_nowait()
-        assert e1["event"] == "event1"
-        assert e2["event"] == "event2"
+        assert json.loads(e1["data"])["type"] == "event1"
+        assert json.loads(e2["data"])["type"] == "event2"

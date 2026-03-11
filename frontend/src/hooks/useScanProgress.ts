@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { ScanConfig, ScanEvent } from "../types/graph";
 import { startScan, subscribeScanEvents } from "../api/client";
 
@@ -7,14 +7,27 @@ export function useScanProgress() {
   const [messages, setMessages] = useState<string[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const doneRef = useRef(false);
+
+  // Close EventSource on unmount
+  useEffect(() => {
+    return () => {
+      cleanupRef.current?.();
+      cleanupRef.current = null;
+    };
+  }, []);
+
+  const teardown = () => {
+    setScanning(false);
+    const cleanup = cleanupRef.current;
+    cleanupRef.current = null;
+    cleanup?.();
+  };
 
   const runScan = useCallback(
     async (config: ScanConfig, onComplete: () => void) => {
       setScanning(true);
       setMessages([]);
       setScanError(null);
-      doneRef.current = false;
 
       try {
         await startScan(config);
@@ -24,27 +37,16 @@ export function useScanProgress() {
             setMessages((prev) => [...prev, event.message]);
 
             if (event.type === "complete") {
-              doneRef.current = true;
-              setScanning(false);
-              const cleanup = cleanupRef.current;
-              cleanupRef.current = null;
-              cleanup?.();
+              teardown();
               onComplete();
             } else if (event.type === "error") {
-              doneRef.current = true;
               setScanError(event.message);
-              setScanning(false);
-              const cleanup = cleanupRef.current;
-              cleanupRef.current = null;
-              cleanup?.();
+              teardown();
             }
           },
           () => {
-            // Only treat as error if scan hasn't already completed/errored
-            if (!doneRef.current) {
-              setScanError("Lost connection to server");
-              setScanning(false);
-            }
+            setScanError("Lost connection to server");
+            setScanning(false);
           }
         );
       } catch (err) {
@@ -58,10 +60,7 @@ export function useScanProgress() {
   );
 
   const cancelScan = useCallback(() => {
-    doneRef.current = true;
-    cleanupRef.current?.();
-    cleanupRef.current = null;
-    setScanning(false);
+    teardown();
   }, []);
 
   return { scanning, messages, scanError, runScan, cancelScan };
