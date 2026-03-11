@@ -424,6 +424,235 @@ class TestUnionAll:
         assert mapped_cols == {"id", "name"}
 
 
+class TestSubqueries:
+    """Subquery support — derived tables, scalar subqueries, WHERE IN, nested."""
+
+    def test_subquery_in_from(self):
+        """Derived table in FROM: traces through to base table."""
+        sql = "SELECT id, name_upper FROM (SELECT id, UPPER(name) AS name_upper FROM mydb.users) sub"
+        schemas = {
+            "mydb.users": {"id": "INT64", "name": "STRING"},
+            "target.v": {"id": "INT64", "name_upper": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        assert edges[0].source_node == "mydb.users"
+        m = _get_mapping(edges, "mydb.users", "id")
+        assert m.transformation == "direct"
+        m = _get_mapping(edges, "mydb.users", "name_upper")
+        assert m.transformation == "expression"
+        assert "UPPER" in m.expression
+
+    def test_scalar_subquery_in_select(self):
+        """Correlated scalar subquery in SELECT list."""
+        sql = (
+            "SELECT id, "
+            "(SELECT MAX(amount) FROM mydb.orders WHERE orders.user_id = users.id) AS max_order "
+            "FROM mydb.users"
+        )
+        schemas = {
+            "mydb.users": {"id": "INT64"},
+            "mydb.orders": {"amount": "FLOAT64", "user_id": "INT64"},
+            "target.v": {"id": "INT64", "max_order": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m_id = _get_mapping(edges, "mydb.users", "id")
+        assert m_id.transformation == "direct"
+        m_max = _get_mapping(edges, "mydb.orders", "max_order")
+        assert m_max is not None
+        assert m_max.source_columns == ["amount"]
+
+    def test_multiple_scalar_subqueries(self):
+        """Multiple scalar subqueries in SELECT."""
+        sql = (
+            "SELECT id, "
+            "(SELECT MAX(amount) FROM mydb.orders WHERE orders.user_id = users.id) AS max_order, "
+            "(SELECT MIN(amount) FROM mydb.orders WHERE orders.user_id = users.id) AS min_order "
+            "FROM mydb.users"
+        )
+        schemas = {
+            "mydb.users": {"id": "INT64"},
+            "mydb.orders": {"amount": "FLOAT64", "user_id": "INT64"},
+            "target.v": {"id": "INT64", "max_order": "FLOAT64", "min_order": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m_max = _get_mapping(edges, "mydb.orders", "max_order")
+        assert m_max is not None
+        m_min = _get_mapping(edges, "mydb.orders", "min_order")
+        assert m_min is not None
+
+    def test_where_in_subquery(self):
+        """WHERE IN subquery: only main table columns appear in lineage."""
+        sql = "SELECT id, name FROM mydb.users WHERE id IN (SELECT user_id FROM mydb.active_users)"
+        schemas = {
+            "mydb.users": {"id": "INT64", "name": "STRING"},
+            "mydb.active_users": {"user_id": "INT64"},
+            "target.v": {"id": "INT64", "name": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        source_nodes = {e.source_node for e in edges}
+        assert "mydb.users" in source_nodes
+        # active_users is only used for filtering, not column lineage
+        assert "mydb.active_users" not in source_nodes
+        m = _get_mapping(edges, "mydb.users", "id")
+        assert m.transformation == "direct"
+
+    def test_where_not_in_subquery(self):
+        """WHERE NOT IN subquery: filter table excluded from lineage."""
+        sql = "SELECT id, name FROM mydb.users WHERE id NOT IN (SELECT user_id FROM mydb.blocked)"
+        schemas = {
+            "mydb.users": {"id": "INT64", "name": "STRING"},
+            "mydb.blocked": {"user_id": "INT64"},
+            "target.v": {"id": "INT64", "name": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        source_nodes = {e.source_node for e in edges}
+        assert source_nodes == {"mydb.users"}
+
+    def test_exists_subquery(self):
+        """EXISTS subquery: only main table contributes to lineage."""
+        sql = (
+            "SELECT id, name FROM mydb.users "
+            "WHERE EXISTS (SELECT 1 FROM mydb.orders WHERE orders.user_id = users.id)"
+        )
+        schemas = {
+            "mydb.users": {"id": "INT64", "name": "STRING"},
+            "mydb.orders": {"user_id": "INT64"},
+            "target.v": {"id": "INT64", "name": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        source_nodes = {e.source_node for e in edges}
+        assert source_nodes == {"mydb.users"}
+
+    def test_nested_subquery(self):
+        """Two levels of nested subqueries: traces through to base table."""
+        sql = """SELECT a FROM (
+            SELECT x AS a FROM (
+                SELECT col1 AS x FROM mydb.raw
+            ) inner_sq
+        ) outer_sq"""
+        schemas = {
+            "mydb.raw": {"col1": "INT64"},
+            "target.v": {"a": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        assert edges[0].source_node == "mydb.raw"
+        m = _get_mapping(edges, "mydb.raw", "a")
+        assert m.transformation == "rename"
+        assert m.source_columns == ["col1"]
+
+    def test_subquery_with_aggregation(self):
+        """Subquery containing GROUP BY: aggregation is detected."""
+        sql = """SELECT user_id, total_orders FROM (
+            SELECT user_id, COUNT(*) AS total_orders
+            FROM mydb.orders GROUP BY user_id
+        ) summary"""
+        schemas = {
+            "mydb.orders": {"user_id": "INT64", "order_id": "INT64"},
+            "target.v": {"user_id": "INT64", "total_orders": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        m = _get_mapping(edges, "mydb.orders", "total_orders")
+        assert m.transformation == "aggregation"
+
+    def test_subquery_in_join(self):
+        """Subquery as JOIN operand: both sources contribute edges."""
+        sql = """SELECT u.id, u.name, o.total_amount FROM mydb.users u
+            JOIN (SELECT user_id, SUM(amount) AS total_amount FROM mydb.orders GROUP BY user_id) o
+            ON u.id = o.user_id"""
+        schemas = {
+            "mydb.users": {"id": "INT64", "name": "STRING"},
+            "mydb.orders": {"user_id": "INT64", "amount": "FLOAT64"},
+            "target.v": {"id": "INT64", "name": "STRING", "total_amount": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        source_nodes = {e.source_node for e in edges}
+        assert source_nodes == {"mydb.users", "mydb.orders"}
+        m = _get_mapping(edges, "mydb.orders", "total_amount")
+        assert m.transformation == "aggregation"
+        assert "SUM" in m.expression
+
+    def test_subquery_with_case_when(self):
+        """CASE WHEN inside subquery is traced as expression."""
+        sql = """SELECT id, category FROM (
+            SELECT id, CASE WHEN amount > 100 THEN 'high' ELSE 'low' END AS category
+            FROM mydb.orders
+        ) categorized"""
+        schemas = {
+            "mydb.orders": {"id": "INT64", "amount": "FLOAT64"},
+            "target.v": {"id": "INT64", "category": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.orders", "category")
+        assert m.transformation == "expression"
+        assert "CASE" in m.expression
+
+    def test_union_inside_subquery(self):
+        """UNION ALL inside a derived table: both branches traced."""
+        sql = """SELECT id, name FROM (
+            SELECT id, name FROM mydb.t1
+            UNION ALL
+            SELECT user_id AS id, username AS name FROM mydb.t2
+        ) combined"""
+        schemas = {
+            "mydb.t1": {"id": "INT64", "name": "STRING"},
+            "mydb.t2": {"user_id": "INT64", "username": "STRING"},
+            "target.v": {"id": "INT64", "name": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        source_nodes = {e.source_node for e in edges}
+        assert source_nodes == {"mydb.t1", "mydb.t2"}
+
+    def test_subquery_referencing_cte(self):
+        """Subquery in FROM that references a CTE."""
+        sql = """WITH base AS (
+            SELECT id, name FROM mydb.users
+        )
+        SELECT id, name_upper FROM (
+            SELECT id, UPPER(name) AS name_upper FROM base
+        ) sub"""
+        schemas = {
+            "mydb.users": {"id": "INT64", "name": "STRING"},
+            "target.v": {"id": "INT64", "name_upper": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        assert edges[0].source_node == "mydb.users"
+
+    def test_cte_with_subquery_inside(self):
+        """CTE defined using a subquery."""
+        sql = """WITH summary AS (
+            SELECT user_id, total FROM (
+                SELECT user_id, SUM(amount) AS total FROM mydb.orders GROUP BY user_id
+            ) agg
+        )
+        SELECT user_id, total FROM summary"""
+        schemas = {
+            "mydb.orders": {"user_id": "INT64", "amount": "FLOAT64"},
+            "target.v": {"user_id": "INT64", "total": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        assert edges[0].source_node == "mydb.orders"
+        m = _get_mapping(edges, "mydb.orders", "total")
+        assert m.transformation == "aggregation"
+
+    def test_subquery_without_alias(self):
+        """Subquery in FROM without explicit alias (BigQuery allows this)."""
+        sql = "SELECT x FROM (SELECT id AS x FROM mydb.users)"
+        schemas = {
+            "mydb.users": {"id": "INT64"},
+            "target.v": {"x": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 1
+        m = _get_mapping(edges, "mydb.users", "x")
+        assert m.transformation == "rename"
+        assert m.source_columns == ["id"]
+
+
 class TestCreateTableAsSelect:
     """CREATE TABLE AS SELECT support."""
 

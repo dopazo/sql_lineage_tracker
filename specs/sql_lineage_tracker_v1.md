@@ -797,7 +797,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 **Parsing extendido:**
 - [x] `SELECT *` con expansion por schema
 - [x] `UNION ALL` — columnas por posicion
-- [ ] Subconsultas (subqueries)
+- [x] Subconsultas (subqueries)
 - [ ] Funciones de ventana (window functions)
 - [ ] `UNNEST` y `STRUCT`
 - [ ] Scheduled queries via Data Transfer API
