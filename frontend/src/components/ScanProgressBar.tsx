@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 interface ScanProgressBarProps {
   messages: string[];
   scanning: boolean;
@@ -9,6 +11,15 @@ export function ScanProgressBar({
   scanning,
   error,
 }: ScanProgressBarProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages]);
+
   if (!scanning && messages.length === 0 && !error) return null;
 
   return (
@@ -40,7 +51,7 @@ export function ScanProgressBar({
           </div>
         )}
 
-        <div className="max-h-24 overflow-y-auto space-y-0.5">
+        <div ref={scrollRef} className="max-h-24 overflow-y-auto space-y-0.5">
           {messages.map((msg, i) => (
             <div
               key={i}
