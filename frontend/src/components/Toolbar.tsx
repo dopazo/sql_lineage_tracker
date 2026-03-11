@@ -13,6 +13,7 @@ interface ToolbarProps {
   onClearTrace: () => void;
   onRescan: (config: ScanConfig) => void;
   onExport: () => void;
+  onResetLayout?: () => void;
   scanning: boolean;
   showFilters?: boolean;
   onToggleFilters?: () => void;
@@ -29,6 +30,7 @@ export function Toolbar({
   onClearTrace,
   onRescan,
   onExport,
+  onResetLayout,
   scanning,
   showFilters,
   onToggleFilters,
@@ -183,6 +185,13 @@ export function Toolbar({
           </>
         )}
       </div>
+
+      {/* Reset Layout */}
+      {onResetLayout && (
+        <button onClick={onResetLayout} className="btn-ghost text-sm" title="Reset node positions to auto-layout">
+          Reset Layout
+        </button>
+      )}
 
       {/* Export */}
       <button onClick={onExport} className="btn-ghost text-sm">

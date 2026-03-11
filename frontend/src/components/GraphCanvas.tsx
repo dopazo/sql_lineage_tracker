@@ -10,6 +10,7 @@ import {
   type Edge,
   type NodeTypes,
   MarkerType,
+  type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -27,6 +28,29 @@ import { useGraphFilters } from "../hooks/useGraphFilters";
 import { useScanProgress } from "../hooks/useScanProgress";
 import { exportGraphJSON } from "../api/client";
 import type { ScanConfig } from "../types/graph";
+
+// Position persistence via localStorage
+const POSITION_KEY_PREFIX = "sql-lineage-positions-";
+
+function loadPositions(projectId: string): Record<string, { x: number; y: number }> {
+  try {
+    const stored = localStorage.getItem(POSITION_KEY_PREFIX + projectId);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePositions(
+  projectId: string,
+  positions: Record<string, { x: number; y: number }>
+) {
+  try {
+    localStorage.setItem(POSITION_KEY_PREFIX + projectId, JSON.stringify(positions));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 interface ManualEdgeModalState {
   anchorNodeId: string;
@@ -48,6 +72,7 @@ function buildFlowElements(
   traceNodeIds: Set<string> | null,
   traceEdgeIds: Set<string> | null,
   getHighlightedColumns: (nodeId: string) => string[],
+  savedPositions: Record<string, { x: number; y: number }>,
   onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void
 ): { nodes: Node[]; edges: Edge[] } {
   const hasTrace = traceNodeIds !== null;
@@ -103,10 +128,40 @@ function buildFlowElements(
     };
   });
 
-  return getLayoutedElements(flowNodes, flowEdges);
+  const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(flowNodes, flowEdges);
+
+  // Apply user-saved positions over the auto-layout
+  const finalNodes = layoutedNodes.map((node) => ({
+    ...node,
+    position: savedPositions[node.id] ?? node.position,
+  }));
+
+  return { nodes: finalNodes, edges: layoutedEdges };
 }
 
 export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
+  const projectId = graph.metadata.project_id;
+
+  const [savedPositions, setSavedPositions] = useState<
+    Record<string, { x: number; y: number }>
+  >(() => loadPositions(projectId));
+
+  const handleNodeDragStop = useCallback<OnNodeDrag>(
+    (_event, node) => {
+      setSavedPositions((prev) => {
+        const updated = { ...prev, [node.id]: node.position };
+        savePositions(projectId, updated);
+        return updated;
+      });
+    },
+    [projectId]
+  );
+
+  const handleResetLayout = useCallback(() => {
+    localStorage.removeItem(POSITION_KEY_PREFIX + projectId);
+    setSavedPositions({});
+  }, [projectId]);
+
   const {
     filters,
     filteredGraph,
@@ -175,9 +230,11 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         traceNodeIds,
         traceEdgeIds,
         getHighlightedColumns,
+        savedPositions,
         handleGapClick
       ),
-    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, handleGapClick]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, savedPositions, handleGapClick]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -230,6 +287,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         onClearTrace={clearTrace}
         onRescan={handleRescan}
         onExport={() => exportGraphJSON(graph)}
+        onResetLayout={handleResetLayout}
         scanning={scanning}
         showFilters={showFilters}
         onToggleFilters={() => setShowFilters((v) => !v)}
@@ -265,6 +323,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
+            onNodeDragStop={handleNodeDragStop}
             nodeTypes={rfNodeTypes}
             fitView
             minZoom={0.1}
