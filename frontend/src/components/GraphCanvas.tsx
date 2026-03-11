@@ -295,7 +295,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         error={scanError}
       />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative z-0 flex flex-1 overflow-hidden">
         {showFilters && (
           <FilterPanel
             filters={filters}
