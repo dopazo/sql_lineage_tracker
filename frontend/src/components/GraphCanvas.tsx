@@ -72,7 +72,6 @@ function buildFlowElements(
   traceNodeIds: Set<string> | null,
   traceEdgeIds: Set<string> | null,
   getHighlightedColumns: (nodeId: string) => string[],
-  savedPositions: Record<string, { x: number; y: number }>,
   onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void
 ): { nodes: Node[]; edges: Edge[] } {
   const hasTrace = traceNodeIds !== null;
@@ -106,8 +105,8 @@ function buildFlowElements(
     const edgeColor = dimmed
       ? "rgba(148,163,184,0.15)"
       : edge.edge_type === "manual"
-        ? "#a78bfa"
-        : "#22d3ee";
+        ? "var(--accent-purple)"
+        : "var(--accent-cyan)";
 
     return {
       id: edge.id,
@@ -130,13 +129,7 @@ function buildFlowElements(
 
   const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(flowNodes, flowEdges);
 
-  // Apply user-saved positions over the auto-layout
-  const finalNodes = layoutedNodes.map((node) => ({
-    ...node,
-    position: savedPositions[node.id] ?? node.position,
-  }));
-
-  return { nodes: finalNodes, edges: layoutedEdges };
+  return { nodes: layoutedNodes, edges: layoutedEdges };
 }
 
 export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
@@ -216,25 +209,27 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     onGraphReload();
   }, [onGraphReload]);
 
-  const handleGapClick = useCallback(
-    (nodeId: string, direction: "upstream" | "downstream") => {
-      openManualEdgeModal(nodeId, direction);
-    },
-    [openManualEdgeModal]
-  );
-
-  const { nodes: initialNodes, edges: initialEdges } = useMemo(
+  const { nodes: layoutedNodes, edges: initialEdges } = useMemo(
     () =>
       buildFlowElements(
         filteredGraph,
         traceNodeIds,
         traceEdgeIds,
         getHighlightedColumns,
-        savedPositions,
-        handleGapClick
+        openManualEdgeModal
       ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, savedPositions, handleGapClick]
+    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, openManualEdgeModal]
+  );
+
+  // Apply user-saved positions on top of dagre layout (separate from layout computation)
+  const initialNodes = useMemo(
+    () =>
+      layoutedNodes.map((node) =>
+        savedPositions[node.id]
+          ? { ...node, position: savedPositions[node.id] }
+          : node
+      ),
+    [layoutedNodes, savedPositions]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
