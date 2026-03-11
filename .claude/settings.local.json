@@ -9,7 +9,9 @@
       "Bash(cd C:/Users/diego/Documents/Diego/projects/sql_lineage_tracker/frontend && bun run build 2>&1)",
       "Bash(cd C:/Users/diego/Documents/Diego/projects/sql_lineage_tracker/backend && uv run pytest tests/test_server.py -v 2>&1)",
       "Bash(cd /c/Users/diego/Documents/Diego/projects/sql_lineage_tracker/backend && uv run python -m pytest tests/test_parser.py -v 2>&1)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(cd C:\\\\Users\\\\diego\\\\Documents\\\\Diego\\\\projects\\\\sql_lineage_tracker/frontend && bun run build 2>&1 | tail -5)",
+      "Bash(cd /c/Users/diego/Documents/Diego/projects/sql_lineage_tracker/frontend && bun run build 2>&1 | tail -10)"
     ]
   }
 }

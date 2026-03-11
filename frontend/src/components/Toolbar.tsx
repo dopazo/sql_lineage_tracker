@@ -63,7 +63,7 @@ export function Toolbar({
   const stats = graph.metadata.scan_stats;
 
   return (
-    <div className="flex items-center gap-4 px-5 py-2.5 glass border-b border-[var(--border-subtle)]">
+    <div className="relative z-50 flex items-center gap-4 px-5 py-2.5 glass border-b border-[var(--border-subtle)]">
       {/* Logo + Title */}
       <div className="flex items-center gap-2.5 shrink-0">
         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[var(--accent-teal)] to-[var(--accent-cyan)] flex items-center justify-center">
