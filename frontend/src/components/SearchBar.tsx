@@ -24,9 +24,9 @@ export function SearchBar({
   return (
     <div className="relative">
       <div className="flex items-center gap-1.5">
-        <div className="relative">
+        <div className="input-dark w-64 py-2 px-3 flex items-center gap-2">
           <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+            className="shrink-0 text-[var(--text-muted)]"
             width="14"
             height="14"
             viewBox="0 0 24 24"
@@ -50,7 +50,7 @@ export function SearchBar({
             }}
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 200)}
-            className="input-dark w-64 pl-9 py-2"
+            className="w-full bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
           />
         </div>
         {hasActiveTrace && (
