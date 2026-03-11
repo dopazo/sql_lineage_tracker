@@ -3,7 +3,8 @@
 Parses SQL view definitions and extracts column-level lineage,
 producing LineageEdge objects with ColumnMapping details.
 
-Supports: SELECT, alias/rename, JOIN, CTE, expressions, aggregations.
+Supports: SELECT, alias/rename, JOIN, CTE, expressions, aggregations,
+SELECT * with schema expansion.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from collections import defaultdict
 import sqlglot
 from sqlglot import exp
 from sqlglot.lineage import lineage
+from sqlglot.optimizer.qualify_columns import qualify_columns
+from sqlglot.schema import MappingSchema
 
 from lineage_tracker.models import ColumnMapping, LineageEdge
 
@@ -48,6 +51,9 @@ def parse_view_lineage(
 
     # Build schema in sqlglot nested format: {db: {table: {col: type}}}
     sg_schema = _build_sqlglot_schema(schemas)
+
+    # Expand SELECT * using schema before tracing lineage
+    normalized_sql = _expand_star(normalized_sql, sg_schema)
 
     # Get output columns for this view
     output_cols = list(schemas.get(view_id, {}).keys())
@@ -145,6 +151,40 @@ def _strip_project_prefix(sql: str) -> str:
             table.set("catalog", None)
 
     return parsed.sql(dialect="bigquery")
+
+
+def _expand_star(
+    sql: str,
+    sg_schema: dict[str, dict[str, dict[str, str]]],
+) -> str:
+    """Expand SELECT * into explicit column references using known schemas.
+
+    Uses sqlglot's qualify_columns optimizer pass which resolves
+    `SELECT *` and `SELECT t.*` into individual column references
+    based on the provided schema.
+
+    Returns the original SQL unchanged if expansion fails or if
+    there are no star expressions.
+    """
+    try:
+        parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+    except Exception:
+        return sql
+
+    if parsed is None:
+        return sql
+
+    # Quick check: skip if no star expressions exist
+    if not list(parsed.find_all(exp.Star)):
+        return sql
+
+    try:
+        schema_obj = MappingSchema(mapping=sg_schema, dialect="bigquery")
+        qualified = qualify_columns(parsed, schema=schema_obj, dialect="bigquery")
+        return qualified.sql(dialect="bigquery")
+    except Exception:
+        logger.debug("Failed to expand SELECT * for SQL: %s...", sql[:80])
+        return sql
 
 
 def _build_sqlglot_schema(
