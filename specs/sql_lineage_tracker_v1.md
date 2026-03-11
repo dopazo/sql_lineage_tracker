@@ -799,7 +799,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] `UNION ALL` — columnas por posicion
 - [x] Subconsultas (subqueries)
 - [x] Funciones de ventana (window functions)
-- [ ] `UNNEST` y `STRUCT`
+- [x] `UNNEST` y `STRUCT`
 - [ ] Scheduled queries via Data Transfer API
 - [ ] Routines (`INFORMATION_SCHEMA.ROUTINES`)
 - [ ] SQL dinamico — marcar como warning
