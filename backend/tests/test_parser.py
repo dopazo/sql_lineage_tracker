@@ -232,6 +232,198 @@ class TestSelectStar:
         assert "name" in mapped_cols
 
 
+class TestUnionAll:
+    """UNION ALL / UNION DISTINCT — columns mapped by position."""
+
+    def test_basic_union_all(self):
+        """Each branch produces edges to the same target, mapped by position."""
+        sql = "SELECT a, b FROM ds1.t1 UNION ALL SELECT c, d FROM ds2.t2"
+        schemas = {
+            "ds1.t1": {"a": "INT64", "b": "STRING"},
+            "ds2.t2": {"c": "INT64", "d": "STRING"},
+            "target.v": {"a": "INT64", "b": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 2
+
+        # First branch: direct mapping
+        m = _get_mapping(edges, "ds1.t1", "a")
+        assert m.transformation == "direct"
+        assert m.source_columns == ["a"]
+        m = _get_mapping(edges, "ds1.t1", "b")
+        assert m.transformation == "direct"
+
+        # Second branch: positional rename
+        m = _get_mapping(edges, "ds2.t2", "a")
+        assert m.transformation == "rename"
+        assert m.source_columns == ["c"]
+        m = _get_mapping(edges, "ds2.t2", "b")
+        assert m.transformation == "rename"
+        assert m.source_columns == ["d"]
+
+    def test_three_way_union_all(self):
+        """Three-branch UNION ALL produces edges from all three sources."""
+        sql = (
+            "SELECT a FROM ds1.t1 UNION ALL SELECT b FROM ds2.t2 "
+            "UNION ALL SELECT c FROM ds3.t3"
+        )
+        schemas = {
+            "ds1.t1": {"a": "INT64"},
+            "ds2.t2": {"b": "INT64"},
+            "ds3.t3": {"c": "INT64"},
+            "target.v": {"a": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        source_nodes = {e.source_node for e in edges}
+        assert source_nodes == {"ds1.t1", "ds2.t2", "ds3.t3"}
+
+    def test_union_all_with_expressions(self):
+        """Expression attribution is correct per branch."""
+        sql = (
+            "SELECT UPPER(name) AS label FROM ds1.t1 "
+            "UNION ALL SELECT LOWER(title) AS label FROM ds2.t2"
+        )
+        schemas = {
+            "ds1.t1": {"name": "STRING"},
+            "ds2.t2": {"title": "STRING"},
+            "target.v": {"label": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m1 = _get_mapping(edges, "ds1.t1", "label")
+        assert m1.transformation == "expression"
+        assert "UPPER" in m1.expression
+
+        m2 = _get_mapping(edges, "ds2.t2", "label")
+        assert m2.transformation == "expression"
+        assert "LOWER" in m2.expression
+
+    def test_union_all_with_aggregations(self):
+        """Aggregation expressions are correctly attributed per branch."""
+        sql = (
+            "SELECT category, SUM(amount) AS total FROM ds1.sales GROUP BY category "
+            "UNION ALL "
+            "SELECT category, SUM(revenue) AS total FROM ds2.returns GROUP BY category"
+        )
+        schemas = {
+            "ds1.sales": {"category": "STRING", "amount": "FLOAT64"},
+            "ds2.returns": {"category": "STRING", "revenue": "FLOAT64"},
+            "target.v": {"category": "STRING", "total": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m1 = _get_mapping(edges, "ds1.sales", "total")
+        assert m1.transformation == "aggregation"
+        assert "amount" in m1.expression
+
+        m2 = _get_mapping(edges, "ds2.returns", "total")
+        assert m2.transformation == "aggregation"
+        assert "revenue" in m2.expression
+
+    def test_union_all_select_star(self):
+        """SELECT * in UNION ALL branches expands using schemas."""
+        sql = "SELECT * FROM ds1.t1 UNION ALL SELECT * FROM ds2.t2"
+        schemas = {
+            "ds1.t1": {"id": "INT64", "name": "STRING"},
+            "ds2.t2": {"id": "INT64", "name": "STRING"},
+            "target.v": {"id": "INT64", "name": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 2
+        for e in edges:
+            mapped_cols = {m.target_column for m in e.column_mappings}
+            assert mapped_cols == {"id", "name"}
+
+    def test_union_all_select_star_different_names(self):
+        """SELECT * with different column names maps by position."""
+        sql = "SELECT * FROM ds1.orders UNION ALL SELECT * FROM ds2.purchases"
+        schemas = {
+            "ds1.orders": {"order_id": "STRING", "total": "FLOAT64"},
+            "ds2.purchases": {"purchase_id": "STRING", "amount": "FLOAT64"},
+            "target.v": {"order_id": "STRING", "total": "FLOAT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "ds2.purchases", "order_id")
+        assert m.transformation == "rename"
+        assert m.source_columns == ["purchase_id"]
+        m = _get_mapping(edges, "ds2.purchases", "total")
+        assert m.transformation == "rename"
+        assert m.source_columns == ["amount"]
+
+    def test_union_distinct(self):
+        """UNION DISTINCT (valid BigQuery syntax) works like UNION ALL for lineage."""
+        sql = "SELECT a FROM ds1.t1 UNION DISTINCT SELECT b FROM ds2.t2"
+        schemas = {
+            "ds1.t1": {"a": "INT64"},
+            "ds2.t2": {"b": "INT64"},
+            "target.v": {"a": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 2
+        m = _get_mapping(edges, "ds2.t2", "a")
+        assert m.transformation == "rename"
+        assert m.source_columns == ["b"]
+
+    def test_union_all_in_cte(self):
+        """UNION ALL inside a CTE — outer SELECT traces through both branches."""
+        sql = """
+        WITH combined AS (
+            SELECT id, name FROM ds1.t1
+            UNION ALL
+            SELECT user_id AS id, username AS name FROM ds2.t2
+        )
+        SELECT id, UPPER(name) AS name_upper FROM combined
+        """
+        schemas = {
+            "ds1.t1": {"id": "INT64", "name": "STRING"},
+            "ds2.t2": {"user_id": "INT64", "username": "STRING"},
+            "target.v": {"id": "INT64", "name_upper": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        assert len(edges) == 2
+        # Both sources traced through CTE
+        source_nodes = {e.source_node for e in edges}
+        assert source_nodes == {"ds1.t1", "ds2.t2"}
+
+    def test_union_all_referencing_ctes(self):
+        """UNION ALL at top level where each branch references a CTE."""
+        sql = """
+        WITH cte1 AS (
+            SELECT id, name FROM ds1.t1
+        ), cte2 AS (
+            SELECT user_id AS id, username AS name FROM ds2.t2
+        )
+        SELECT id, name FROM cte1
+        UNION ALL
+        SELECT id, name FROM cte2
+        """
+        schemas = {
+            "ds1.t1": {"id": "INT64", "name": "STRING"},
+            "ds2.t2": {"user_id": "INT64", "username": "STRING"},
+            "target.v": {"id": "INT64", "name": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        source_nodes = {e.source_node for e in edges}
+        assert "ds1.t1" in source_nodes
+        assert "ds2.t2" in source_nodes
+
+    def test_union_all_same_source(self):
+        """Both UNION branches reference the same table with different filters."""
+        sql = (
+            "SELECT id, name FROM ds1.t1 WHERE active = TRUE "
+            "UNION ALL "
+            "SELECT id, name FROM ds1.t1 WHERE archived = TRUE"
+        )
+        schemas = {
+            "ds1.t1": {"id": "INT64", "name": "STRING", "active": "BOOL", "archived": "BOOL"},
+            "target.v": {"id": "INT64", "name": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        # Single edge to the same source, last branch wins for mappings
+        assert len(edges) == 1
+        assert edges[0].source_node == "ds1.t1"
+        mapped_cols = {m.target_column for m in edges[0].column_mappings}
+        assert mapped_cols == {"id", "name"}
+
+
 class TestCreateTableAsSelect:
     """CREATE TABLE AS SELECT support."""
 

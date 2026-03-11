@@ -6,8 +6,8 @@ View tested:
 Comportamiento del parser con UNION ALL:
   - Genera 2 edges, uno por rama del UNION ALL.
   - Las columnas se trazan por separado a cada fuente.
-  - Las columnas con valor literal (ej. 'order') quedan como [unknown] en su rama.
-  - El campo 'event_type' solo aparece en el edge de orders_clean (primera rama).
+  - Las columnas con valor literal (ej. 'order', 'transaction') quedan como [unknown] en ambas ramas.
+  - Cada rama se parsea independientemente con mapeo por posicion.
 """
 
 import pytest
@@ -126,11 +126,12 @@ class TestAllRevenue:
         target_cols = [m.target_column for m in edge.column_mappings]
         assert "event_at" in target_cols
 
-    def test_edge_transactions_clean_no_contiene_event_type_literal(self):
-        """El literal 'transaction' no genera un mapping en la segunda rama."""
-        edge = _get_edge(self.edges, "staging.transactions_clean")
-        target_cols = [m.target_column for m in edge.column_mappings]
-        assert "event_type" not in target_cols
+    def test_event_type_en_transactions_clean_es_unknown_por_ser_literal(self):
+        """'transaction' es un literal sin columna fuente: el parser lo marca como unknown."""
+        m = _get_mapping(self.edges, "staging.transactions_clean", "event_type")
+        assert m is not None
+        assert m.transformation == "unknown"
+        assert m.source_columns == []
 
     def test_union_all_columnas_mismas_en_ambas_ramas(self):
         """Las columnas trazables (sin literales) deben aparecer en ambas ramas."""
@@ -142,6 +143,7 @@ class TestAllRevenue:
         tx_cols = {
             m.target_column
             for m in _get_edge(self.edges, "staging.transactions_clean").column_mappings
+            if m.transformation != "unknown"
         }
         # event_id, amount y event_at deben existir en ambas ramas
         assert orders_cols >= {"event_id", "amount", "event_at"}

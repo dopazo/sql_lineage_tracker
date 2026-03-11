@@ -4,7 +4,7 @@ Parses SQL view definitions and extracts column-level lineage,
 producing LineageEdge objects with ColumnMapping details.
 
 Supports: SELECT, alias/rename, JOIN, CTE, expressions, aggregations,
-SELECT * with schema expansion.
+SELECT * with schema expansion, UNION ALL/UNION (columns by position).
 """
 
 from __future__ import annotations
@@ -54,6 +54,11 @@ def parse_view_lineage(
 
     # Expand SELECT * using schema before tracing lineage
     normalized_sql = _expand_star(normalized_sql, sg_schema)
+
+    # Handle UNION / UNION ALL: decompose into branches and parse each
+    union_branches = _extract_union_branches(normalized_sql)
+    if union_branches is not None:
+        return _handle_union_lineage(view_id, union_branches, normalized_sql, schemas)
 
     # Get output columns for this view
     output_cols = list(schemas.get(view_id, {}).keys())
@@ -391,3 +396,200 @@ def _add_unknown_mapping(
         target_column=target_col,
         transformation="unknown",
     )
+
+
+def _extract_union_branches(sql: str) -> list[exp.Select] | None:
+    """Detect UNION/UNION ALL and return individual SELECT branches.
+
+    Returns None if the top-level statement is not a UNION.
+    Returns a list of Select expressions (one per branch) if it is.
+    Handles CTEs by preserving them on the first branch.
+    """
+    try:
+        parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+    except Exception:
+        return None
+
+    if parsed is None:
+        return None
+
+    # Unwrap CREATE TABLE AS SELECT if present
+    stmt = parsed
+    if isinstance(stmt, (exp.Create,)):
+        inner = stmt.find(exp.Union) or stmt.find(exp.Select)
+        if inner is not None:
+            stmt = inner
+
+    if not isinstance(stmt, exp.Union):
+        return None
+
+    # Collect all branches by traversing the Union tree
+    branches: list[exp.Select] = []
+    _collect_union_branches(stmt, branches)
+    return branches if len(branches) >= 2 else None
+
+
+def _collect_union_branches(node: exp.Expression, branches: list[exp.Select]) -> None:
+    """Recursively collect SELECT branches from a Union tree.
+
+    UNION chains are left-associative: (A UNION B) UNION C
+    The `this` side may be another Union, while `expression` is always a Select.
+    """
+    if isinstance(node, exp.Union):
+        _collect_union_branches(node.this, branches)
+        _collect_union_branches(node.expression, branches)
+    elif isinstance(node, exp.Select):
+        branches.append(node)
+
+
+def _handle_union_lineage(
+    view_id: str,
+    branches: list[exp.Select],
+    original_sql: str,
+    schemas: dict[str, dict[str, str]],
+) -> list[LineageEdge]:
+    """Parse lineage for a UNION query by processing each branch independently.
+
+    Each branch is converted to standalone SQL and parsed via parse_view_lineage.
+    Output columns are mapped by position: branch column N -> output column N.
+    """
+    output_cols = list(schemas.get(view_id, {}).keys())
+    if not output_cols:
+        logger.warning("No schema found for view %s, skipping UNION lineage", view_id)
+        return []
+
+    # Extract CTE definitions from the original SQL to prepend to each branch
+    cte_prefix = _extract_cte_prefix(original_sql)
+
+    # Accumulate edge data across all branches
+    merged_edge_data: dict[str, dict[str, ColumnMapping]] = defaultdict(dict)
+
+    for branch in branches:
+        branch_sql_raw = branch.sql(dialect="bigquery")
+        branch_sql = f"{cte_prefix}\n{branch_sql_raw}" if cte_prefix else branch_sql_raw
+
+        # Determine output column names for this branch by position
+        branch_col_names = _get_branch_output_columns(branch, schemas)
+
+        # Build a synthetic schema for this branch mapping branch cols -> output cols
+        branch_view_schema: dict[str, str] = {}
+        view_schema = schemas.get(view_id, {})
+        for i, out_col in enumerate(output_cols):
+            if i < len(branch_col_names):
+                branch_view_schema[branch_col_names[i]] = view_schema.get(out_col, "STRING")
+
+        # Parse the branch as a standalone query
+        branch_schemas = dict(schemas)
+        branch_view_id = f"__union_branch_{id(branch)}"
+        branch_schemas[branch_view_id] = branch_view_schema
+
+        branch_edges = parse_view_lineage(branch_view_id, branch_sql, branch_schemas)
+
+        # Remap branch column names back to output column names (by position)
+        pos_map = {}
+        for i, bcol in enumerate(branch_col_names):
+            if i < len(output_cols):
+                pos_map[bcol] = output_cols[i]
+
+        for edge in branch_edges:
+            for mapping in edge.column_mappings:
+                remapped_target = pos_map.get(mapping.target_column, mapping.target_column)
+                mapping.target_column = remapped_target
+                # If the target column was renamed by position mapping,
+                # a "direct" may now be a "rename" and vice versa
+                if mapping.transformation in ("direct", "rename"):
+                    if len(mapping.source_columns) == 1 and mapping.source_columns[0] == remapped_target:
+                        mapping.transformation = "direct"
+                    elif len(mapping.source_columns) == 1:
+                        mapping.transformation = "rename"
+
+            # Merge into accumulated edge data
+            for mapping in edge.column_mappings:
+                merged_edge_data[edge.source_node][mapping.target_column] = mapping
+
+    # Build final LineageEdge objects
+    edges: list[LineageEdge] = []
+    for source_node, mappings_dict in merged_edge_data.items():
+        edge_id = f"edge_{source_node}__{view_id}"
+        edges.append(
+            LineageEdge(
+                id=edge_id,
+                source_node=source_node,
+                target_node=view_id,
+                edge_type="automatic",
+                column_mappings=list(mappings_dict.values()),
+            )
+        )
+
+    return edges
+
+
+def _get_branch_output_columns(
+    branch: exp.Select,
+    schemas: dict[str, dict[str, str]] | None = None,
+) -> list[str]:
+    """Extract output column names/aliases from a SELECT branch.
+
+    If the branch contains SELECT * and schemas are provided,
+    expands the star using source table schemas.
+    """
+    has_star = any(isinstance(e, exp.Star) for e in branch.expressions)
+
+    if has_star and schemas:
+        # Try to expand star using qualify_columns
+        sg_schema = _build_sqlglot_schema(schemas)
+        branch_sql = branch.sql(dialect="bigquery")
+        expanded_sql = _expand_star(branch_sql, sg_schema)
+        if expanded_sql != branch_sql:
+            try:
+                expanded = sqlglot.parse(expanded_sql, dialect="bigquery")[0]
+                if isinstance(expanded, exp.Select):
+                    return _get_branch_output_columns(expanded, None)
+            except Exception:
+                pass
+
+    cols: list[str] = []
+    for expr in branch.expressions:
+        if isinstance(expr, exp.Alias):
+            cols.append(expr.alias)
+        elif isinstance(expr, exp.Column):
+            cols.append(expr.name)
+        elif isinstance(expr, exp.Star):
+            # Couldn't expand — try to infer from source tables in the branch
+            if schemas:
+                for table in branch.find_all(exp.Table):
+                    table_id = _extract_table_id(table)
+                    if table_id and table_id in schemas:
+                        cols.extend(schemas[table_id].keys())
+            if not cols:
+                cols.append("*")
+        else:
+            cols.append(expr.sql(dialect="bigquery"))
+    return cols
+
+
+def _extract_cte_prefix(sql: str) -> str:
+    """Extract the WITH ... AS (...) prefix from SQL if present.
+
+    Returns the CTE clause as a string, or empty string if none.
+    """
+    try:
+        parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+    except Exception:
+        return ""
+
+    if parsed is None:
+        return ""
+
+    # For UNION inside CREATE, unwrap first
+    stmt = parsed
+    if isinstance(stmt, exp.Create):
+        stmt = stmt.find(exp.Union) or stmt.find(exp.Select)
+        if stmt is None:
+            return ""
+
+    with_clause = stmt.find(exp.With)
+    if with_clause is None:
+        return ""
+
+    return with_clause.sql(dialect="bigquery")
