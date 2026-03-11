@@ -60,7 +60,6 @@ class ScanEventBus:
     def publish(self, event_type: str, message: str | None = None) -> None:
         """Publish an event. Thread-safe — can be called from executor threads."""
         payload = {
-            "event": event_type,
             "data": json.dumps({
                 "type": event_type,
                 "message": message,
@@ -82,6 +81,12 @@ class ScanEventBus:
 
     def finish(self) -> None:
         """Signal all subscribers that the scan is done."""
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._finish_sync)
+        else:
+            self._finish_sync()
+
+    def _finish_sync(self) -> None:
         for q in self._subscribers:
             try:
                 q.put_nowait(None)
@@ -377,11 +382,7 @@ def create_app(
                         continue
 
                     if event is None:
-                        # Scan finished — send final event and close
-                        yield {
-                            "event": "done",
-                            "data": json.dumps({"type": "done", "message": "Stream closed"}),
-                        }
+                        # Scan finished — close stream
                         break
 
                     yield event
