@@ -5,7 +5,8 @@ producing LineageEdge objects with ColumnMapping details.
 
 Supports: SELECT, alias/rename, JOIN, CTE, expressions, aggregations,
 SELECT * with schema expansion, UNION ALL/UNION (columns by position),
-subqueries (derived tables, scalar subqueries, WHERE IN/EXISTS, nested).
+subqueries (derived tables, scalar subqueries, WHERE IN/EXISTS, nested),
+window functions (ROW_NUMBER, RANK, SUM OVER, LAG/LEAD, etc.).
 """
 
 from __future__ import annotations
@@ -293,6 +294,10 @@ def _classify_transformation(
 
     if top_inner is not None and not isinstance(top_inner, (exp.Column, exp.Table)):
         # Top-level is a real expression — classify it directly
+        # Window functions (OVER) take priority over aggregation detection
+        # because SUM(x) OVER (...) is a window function, not an aggregation.
+        if _contains_window(top_inner):
+            return "expression", top_inner.sql(dialect="bigquery")
         if _contains_aggregate(top_inner):
             return "aggregation", top_inner.sql(dialect="bigquery")
         if _is_expression(top_inner):
@@ -304,6 +309,8 @@ def _classify_transformation(
         inner = expr.unalias() if hasattr(expr, "unalias") else expr
         if isinstance(inner, exp.Table):
             continue
+        if _contains_window(inner):
+            return "expression", inner.sql(dialect="bigquery")
         if _contains_aggregate(inner):
             return "aggregation", inner.sql(dialect="bigquery")
         if _is_expression(inner):
@@ -316,6 +323,16 @@ def _classify_transformation(
         return "rename", None
 
     return "expression", None
+
+
+def _contains_window(expr: exp.Expression) -> bool:
+    """Check if an expression contains a window function (OVER clause)."""
+    if isinstance(expr, exp.Window):
+        return True
+    for child in expr.iter_expressions():
+        if _contains_window(child):
+            return True
+    return False
 
 
 def _contains_aggregate(expr: exp.Expression) -> bool:
@@ -364,11 +381,22 @@ def _handle_no_source(
     if not source_tables:
         return
 
-    # Check all expressions in the chain for aggregates
+    # Check all expressions in the chain for window functions or aggregates
     for expr in chain_exprs:
         inner = expr.unalias() if hasattr(expr, "unalias") else expr
         if isinstance(inner, exp.Table):
             continue
+        # Window functions (e.g. ROW_NUMBER() OVER) take priority
+        if _contains_window(inner):
+            expr_str = inner.sql(dialect="bigquery")
+            primary_table = source_tables[0]
+            edge_data[primary_table][target_col] = ColumnMapping(
+                source_columns=["*"],
+                target_column=target_col,
+                transformation="expression",
+                expression=expr_str,
+            )
+            return
         if _contains_aggregate(inner):
             expr_str = inner.sql(dialect="bigquery")
             primary_table = source_tables[0]
