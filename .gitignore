@@ -4,8 +4,10 @@ __pycache__/
 *.pyo
 *.egg-info/
 *.egg
-dist/
 build/
+
+# Ignore dist/ in backend (Python build artifacts), but keep frontend/dist/ (pre-compiled UI)
+backend/dist/
 
 # Virtual environments
 .venv/
