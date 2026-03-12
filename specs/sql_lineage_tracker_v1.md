@@ -854,43 +854,43 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 ### MVP (Fase 1 — Must Have)
 
 **Backend:**
-- [ ] `uv run sql-lineage-tracker serve --project X --target dataset.tabla` escanea hacia atras, parsea y levanta servidor
-- [ ] `--dataset` limita el escaneo a datasets especificos
-- [ ] `--depth N` limita la profundidad por saltos de dataset
-- [ ] Sin flags de escaneo y sin grafo guardado: levanta servidor con pantalla de setup
-- [ ] Con grafo guardado: levanta servidor y muestra grafo anterior
-- [ ] `--no-scan` levanta servidor sin conectarse a BigQuery
-- [ ] Parsea linaje a nivel de columna para SELECT, alias, JOIN y CTE correctamente
-- [ ] Columnas no resueltas aparecen con indicador visual (no se omiten)
-- [ ] Nodos con errores de permisos/parsing aparecen con indicador de error/warning
-- [ ] Nodos truncados por profundidad aparecen con indicador
-- [ ] Genera JSON con la estructura definida y lo persiste en disco por proyecto
-- [ ] Detecta y reporta nodos huerfanos
-- [ ] Errores de parsing no crashean el proceso (continua con las demas vistas)
-- [ ] Re-escaneo regenera aristas automaticas y preserva aristas manuales
-- [ ] Progreso del escaneo comunicado via SSE
-- [ ] Tests unitarios del parser cubren casos basicos (SELECT, JOIN, CTE, alias)
+- [x] `uv run sql-lineage-tracker serve --project X --target dataset.tabla` escanea hacia atras, parsea y levanta servidor
+- [x] `--dataset` limita el escaneo a datasets especificos
+- [x] `--depth N` limita la profundidad por saltos de dataset
+- [x] Sin flags de escaneo y sin grafo guardado: levanta servidor con pantalla de setup
+- [x] Con grafo guardado: levanta servidor y muestra grafo anterior
+- [x] `--no-scan` levanta servidor sin conectarse a BigQuery
+- [x] Parsea linaje a nivel de columna para SELECT, alias, JOIN y CTE correctamente
+- [x] Columnas no resueltas aparecen con indicador visual (no se omiten)
+- [x] Nodos con errores de permisos/parsing aparecen con indicador de error/warning
+- [x] Nodos truncados por profundidad aparecen con indicador
+- [x] Genera JSON con la estructura definida y lo persiste en disco por proyecto
+- [x] Detecta y reporta nodos huerfanos
+- [x] Errores de parsing no crashean el proceso (continua con las demas vistas)
+- [x] Re-escaneo regenera aristas automaticas y preserva aristas manuales
+- [x] Progreso del escaneo comunicado via SSE
+- [x] Tests unitarios del parser cubren casos basicos (SELECT, JOIN, CTE, alias)
 
 **Frontend:**
-- [ ] Pantalla de configuracion de escaneo funcional (datasets, target, profundidad)
-- [ ] Barra de progreso de escaneo con mensajes en tiempo real
-- [ ] Renderiza DAG navegable desde datos de la API
-- [ ] Indicadores visuales de status en nodos (ok, warning, error, truncated)
-- [ ] Indicadores de linaje resuelto/desconocido en columnas
-- [ ] Buscador encuentra campos por nombre con autocompletado
-- [ ] Filtrado por campo muestra cadena completa siguiendo renames
-- [ ] Panel de detalle de nodo muestra columnas, tipo, SQL
-- [ ] Panel de detalle de arista muestra mapeos de columnas
-- [ ] Indicadores visuales diferencian tipos de nodo y nodos huerfanos
-- [ ] Boton re-escanear funciona con mini-panel de configuracion
-- [ ] Exportar grafo como JSON descargable
+- [x] Pantalla de configuracion de escaneo funcional (datasets, target, profundidad)
+- [x] Barra de progreso de escaneo con mensajes en tiempo real
+- [x] Renderiza DAG navegable desde datos de la API
+- [x] Indicadores visuales de status en nodos (ok, warning, error, truncated)
+- [x] Indicadores de linaje resuelto/desconocido en columnas
+- [x] Buscador encuentra campos por nombre con autocompletado
+- [x] Filtrado por campo muestra cadena completa siguiendo renames
+- [x] Panel de detalle de nodo muestra columnas, tipo, SQL
+- [x] Panel de detalle de arista muestra mapeos de columnas
+- [x] Indicadores visuales diferencian tipos de nodo y nodos huerfanos
+- [x] Boton re-escanear funciona con mini-panel de configuracion
+- [x] Exportar grafo como JSON descargable
 
 ### Nice to Have (Fases 2-3)
 
-- [ ] Uniones manuales con modal de mapeo
-- [ ] Filtros por dataset, tipo, profundidad
-- [ ] Drag and drop con persistencia de posiciones
-- [ ] Soporte para `SELECT *`, `UNION ALL`, funciones de ventana, UNNEST/STRUCT
+- [x] Uniones manuales con modal de mapeo
+- [x] Filtros por dataset, tipo, profundidad
+- [x] Drag and drop con persistencia de posiciones
+- [x] Soporte para `SELECT *`, `UNION ALL`, funciones de ventana, UNNEST/STRUCT
 - [ ] Syntax highlighting del SQL
 - [ ] Vista compacta para grafos grandes
 - [ ] Scheduled queries via Data Transfer API
