@@ -137,6 +137,16 @@ sql_lineage_tracker/
 └── README.md
 ```
 
+## Building the Frontend
+
+A pre-compiled build is included in `frontend/dist/`, so this step is only needed if you modify the frontend code:
+
+```bash
+cd frontend
+bun install
+bun run build
+```
+
 ## Testing
 
 ```bash
