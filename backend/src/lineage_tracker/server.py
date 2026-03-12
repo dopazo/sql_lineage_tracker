@@ -361,6 +361,67 @@ def create_app(
             content={"status": "accepted", "message": "Scan started"},
         )
 
+    @app.post("/api/expand")
+    async def expand_node(request: Request) -> JSONResponse:
+        """Expand a truncated node by scanning its dependencies."""
+        if app.state.no_scan:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Server started with --no-scan; scanning is disabled"},
+            )
+
+        ext = app.state.extractor
+        if ext is None:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "BigQuery connection not available"},
+            )
+
+        if app.state.scan_in_progress:
+            return JSONResponse(
+                status_code=409,
+                content={"error": "A scan is already in progress"},
+            )
+
+        graph: LineageGraph | None = app.state.graph
+        if graph is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No graph loaded"},
+            )
+
+        body = await request.json()
+        node_id = body.get("node_id")
+        if not node_id:
+            return JSONResponse(
+                status_code=422,
+                content={"error": "node_id is required"},
+            )
+
+        node = graph.nodes.get(node_id)
+        if node is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Node '{node_id}' not found"},
+            )
+
+        if node.status != "truncated":
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Node '{node_id}' is not truncated (status: {node.status})"},
+            )
+
+        depth = body.get("depth", 1)
+
+        asyncio.create_task(
+            _run_expand(app, ext, node_id, depth, event_bus)
+        )
+
+        return JSONResponse(
+            status_code=202,
+            content={"status": "accepted", "message": f"Expanding node {node_id}"},
+        )
+
     @app.get("/api/scan/events")
     async def scan_events(request: Request) -> EventSourceResponse:
         """Server-Sent Events endpoint for scan progress."""
@@ -512,6 +573,90 @@ async def _run_scan(
     except Exception:
         logger.exception("Scan failed")
         event_bus.publish("error", "Scan failed unexpectedly")
+    finally:
+        app.state.scan_in_progress = False
+        event_bus.finish()
+
+
+async def _run_expand(
+    app: FastAPI,
+    extractor: BigQueryExtractor,
+    node_id: str,
+    depth: int,
+    event_bus: ScanEventBus,
+) -> None:
+    """Expand a truncated node by scanning from it and merging into the existing graph."""
+    from lineage_tracker.graph import build_graph, format_scan_report
+    from lineage_tracker.scanner import run_scoped_scan
+
+    app.state.scan_in_progress = True
+    event_bus.reset()
+    logger.info("Expanding node: %s (depth=%d)", node_id, depth)
+
+    try:
+        loop = asyncio.get_event_loop()
+        graph: LineageGraph = app.state.graph  # type: ignore[assignment]
+
+        # Build scan config: scan from the truncated node
+        # Include the node's own dataset plus the original scan datasets
+        original_datasets = list(graph.metadata.scan_config.datasets) if graph.metadata.scan_config.datasets else []
+        node_dataset = node_id.split(".")[0]
+        expand_datasets = list(set(original_datasets + [node_dataset]))
+
+        expand_config = ScanConfig(
+            target=node_id,
+            datasets=expand_datasets,
+            depth=depth,
+        )
+
+        # Run scan from the truncated node
+        scan_result = await loop.run_in_executor(
+            None,
+            lambda: run_scoped_scan(extractor, expand_config, progress=event_bus.publish),
+        )
+
+        # Merge: existing nodes + new scan results (new data overwrites truncated nodes)
+        merged_nodes = dict(graph.nodes)
+        merged_nodes.update(scan_result.nodes)
+
+        merged_result = ScanResult(
+            nodes=merged_nodes,
+            errors=scan_result.errors,
+        )
+
+        # Preserve manual edges
+        existing_manual_edges = [e for e in graph.edges if e.edge_type == "manual"]
+
+        # Rebuild graph with all nodes (uses original scan config for metadata)
+        new_graph = await loop.run_in_executor(
+            None,
+            lambda: build_graph(
+                merged_result,
+                graph.metadata.scan_config,
+                app.state.project_id,
+                existing_manual_edges,
+                progress=event_bus.publish,
+            ),
+        )
+
+        app.state.graph = new_graph
+        await _save_current_graph_async(app)
+
+        print(format_scan_report(new_graph, scan_result.errors))
+
+        event_bus.publish(
+            "complete",
+            f"Expansion complete: {len(new_graph.nodes)} nodes, {len(new_graph.edges)} edges",
+        )
+
+        logger.info(
+            "Expansion complete: %d nodes, %d edges",
+            len(new_graph.nodes),
+            len(new_graph.edges),
+        )
+    except Exception:
+        logger.exception("Node expansion failed")
+        event_bus.publish("error", "Node expansion failed unexpectedly")
     finally:
         app.state.scan_in_progress = False
         event_bus.finish()

@@ -113,6 +113,17 @@ export function deleteManualEdge(
   });
 }
 
+export function expandNode(
+  nodeId: string,
+  depth?: number
+): Promise<{ status: string }> {
+  return fetchJSON("/expand", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node_id: nodeId, depth: depth ?? 1 }),
+  });
+}
+
 export function exportGraphJSON(graph: LineageGraph): void {
   const blob = new Blob([JSON.stringify(graph, null, 2)], {
     type: "application/json",

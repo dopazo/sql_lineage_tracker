@@ -72,7 +72,8 @@ function buildFlowElements(
   traceNodeIds: Set<string> | null,
   traceEdgeIds: Set<string> | null,
   getHighlightedColumns: (nodeId: string) => string[],
-  onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void
+  onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void,
+  onExpandNode?: (nodeId: string) => void
 ): { nodes: Node[]; edges: Edge[] } {
   const hasTrace = traceNodeIds !== null;
 
@@ -96,6 +97,7 @@ function buildFlowElements(
         missingUpstream: !hasIncoming.has(id) && node.type !== "table",
         missingDownstream: !hasOutgoing.has(id),
         onGapClick,
+        onExpandNode,
       },
     })
   );
@@ -182,7 +184,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     getHighlightedColumns,
   } = useColumnSearch(filteredGraph);
 
-  const { scanning, messages, scanError, runScan } = useScanProgress();
+  const { scanning, messages, scanError, runScan, runExpand } = useScanProgress();
 
   const [showFilters, setShowFilters] = useState(false);
 
@@ -209,6 +211,16 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     onGraphReload();
   }, [onGraphReload]);
 
+  const handleExpandNode = useCallback(
+    (nodeId: string) => {
+      runExpand(nodeId, () => {
+        setSelectedNode(null);
+        onGraphReload();
+      });
+    },
+    [runExpand, onGraphReload]
+  );
+
   const { nodes: layoutedNodes, edges: initialEdges } = useMemo(
     () =>
       buildFlowElements(
@@ -216,9 +228,10 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         traceNodeIds,
         traceEdgeIds,
         getHighlightedColumns,
-        openManualEdgeModal
+        openManualEdgeModal,
+        handleExpandNode
       ),
-    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, openManualEdgeModal]
+    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, openManualEdgeModal, handleExpandNode]
   );
 
   // Apply user-saved positions on top of dagre layout (separate from layout computation)
@@ -351,6 +364,8 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             onAddDownstream={(nodeId) =>
               openManualEdgeModal(nodeId, "downstream")
             }
+            onExpandNode={handleExpandNode}
+            expanding={scanning}
           />
         )}
 

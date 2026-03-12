@@ -7,6 +7,8 @@ interface NodeDetailPanelProps {
   onClose: () => void;
   onAddUpstream?: (nodeId: string) => void;
   onAddDownstream?: (nodeId: string) => void;
+  onExpandNode?: (nodeId: string) => void;
+  expanding?: boolean;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -46,7 +48,7 @@ function EdgeList({ label, edges, dotColor, getLabel }: {
   );
 }
 
-export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream }: NodeDetailPanelProps) {
+export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream, onExpandNode, expanding }: NodeDetailPanelProps) {
   const upstreamEdges = edges.filter((e) => e.target_node === node.id);
   const downstreamEdges = edges.filter((e) => e.source_node === node.id);
 
@@ -96,6 +98,27 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
           <div className="text-xs text-amber-400 bg-amber-500/10 px-3 py-2 rounded-lg border border-amber-500/20">
             {node.status_message}
           </div>
+        )}
+
+        {/* Expand truncated node */}
+        {node.status === "truncated" && onExpandNode && (
+          <button
+            onClick={() => onExpandNode(node.id)}
+            disabled={expanding}
+            className="w-full px-3 py-2.5 text-sm text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {expanding ? (
+              <>
+                <span className="animate-spin text-xs">&#x21BB;</span>
+                Expanding...
+              </>
+            ) : (
+              <>
+                <span className="text-xs">&#x25B6;</span>
+                Expand — scan dependencies
+              </>
+            )}
+          </button>
         )}
 
         {/* Columns */}

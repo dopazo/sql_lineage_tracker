@@ -810,7 +810,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [ ] Vista compacta para grafos grandes
 - [ ] Notificaciones de aristas manuales obsoletas al re-escanear
 - [ ] Busqueda por tabla (mostrar todas sus conexiones sin filtrar por campo)
-- [ ] Expansion de nodos truncados (scan parcial adicional)
+- [x] Expansion de nodos truncados (scan parcial adicional)
 
 ---
 
@@ -894,7 +894,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Syntax highlighting del SQL
 - [ ] Vista compacta para grafos grandes
 - [ ] Scheduled queries via Data Transfer API
-- [ ] Expansion interactiva de nodos truncados
+- [x] Expansion interactiva de nodos truncados
 
 ---
 
