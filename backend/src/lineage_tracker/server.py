@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import time
+import traceback
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -570,9 +572,10 @@ async def _run_scan(
             len(graph.nodes),
             len(graph.edges),
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Scan failed")
-        event_bus.publish("error", "Scan failed unexpectedly")
+        error_detail = f"{type(exc).__name__}: {exc}"
+        event_bus.publish("error", f"Scan failed: {error_detail}")
     finally:
         app.state.scan_in_progress = False
         event_bus.finish()
@@ -616,7 +619,9 @@ async def _run_expand(
         )
 
         # Merge: existing nodes + new scan results (new data overwrites truncated nodes)
-        merged_nodes = dict(graph.nodes)
+        # Deep-copy existing nodes so build_graph mutations don't corrupt
+        # the original graph (important if build_graph fails midway).
+        merged_nodes = {k: copy.deepcopy(v) for k, v in graph.nodes.items()}
         merged_nodes.update(scan_result.nodes)
 
         merged_result = ScanResult(
@@ -654,9 +659,12 @@ async def _run_expand(
             len(new_graph.nodes),
             len(new_graph.edges),
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Node expansion failed")
-        event_bus.publish("error", "Node expansion failed unexpectedly")
+        tb = traceback.format_exc()
+        error_detail = f"{type(exc).__name__}: {exc}"
+        event_bus.publish("error", f"Node expansion failed: {error_detail}")
+        logger.error("Expansion traceback:\n%s", tb)
     finally:
         app.state.scan_in_progress = False
         event_bus.finish()
