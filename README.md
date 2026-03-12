@@ -27,7 +27,7 @@ Given a target table or view, SQL Lineage Tracker traces the complete lineage of
 | BigQuery client | google-cloud-bigquery |
 | SSE | sse-starlette |
 | Testing | pytest, pytest-asyncio, httpx |
-| Frontend (planned) | React 18, TypeScript, React Flow v12, Tailwind CSS, Vite, bun |
+| Frontend | React 19, TypeScript, React Flow v12 (@xyflow/react), Tailwind CSS v4, Vite v7, bun |
 
 ## Prerequisites
 
@@ -49,6 +49,8 @@ Given a target table or view, SQL Lineage Tracker traces the complete lineage of
 cd backend
 uv sync
 ```
+
+The repo includes a pre-compiled frontend build (`frontend/dist/`) so the web UI works out of the box with just Python — no need to install Node/bun or build the frontend yourself.
 
 ## Usage
 
@@ -98,7 +100,11 @@ uv run sql-lineage-tracker serve \
 | `GET` | `/api/datasets/{id}/tables` | Tables in a dataset |
 | `POST` | `/api/scan` | Initiate async scan |
 | `GET` | `/api/scan/events` | SSE stream for scan progress |
+| `POST` | `/api/expand` | Expand a truncated node |
 | `GET` | `/api/columns/{dataset}/{table}` | Query BigQuery columns |
+| `POST` | `/api/manual-edge` | Create a manual edge |
+| `PUT` | `/api/manual-edge/{id}` | Update a manual edge |
+| `DELETE` | `/api/manual-edge/{id}` | Delete a manual edge |
 
 ## Project Structure
 
@@ -116,6 +122,16 @@ sql_lineage_tracker/
 │   │   ├── persistence.py    # JSON serialization
 │   │   └── models.py         # Data models (dataclasses)
 │   └── tests/
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── src/
+│       ├── App.tsx
+│       ├── api/              # API client
+│       ├── components/       # React components
+│       ├── hooks/            # Custom hooks
+│       ├── types/            # TypeScript types
+│       └── utils/            # Utilities
 ├── specs/
 │   └── sql_lineage_tracker_v1.md  # Technical specification
 └── README.md
