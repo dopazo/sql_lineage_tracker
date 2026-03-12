@@ -1,4 +1,5 @@
 import type { LineageNode, LineageEdge } from "../types/graph";
+import { SqlHighlight } from "./SqlHighlight";
 
 interface NodeDetailPanelProps {
   node: LineageNode;
@@ -166,9 +167,7 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
         {node.sql && (
           <div>
             <div className="label-dark">SQL</div>
-            <pre className="text-xs text-[var(--text-secondary)] bg-[var(--bg-deep)] p-3 rounded-lg border border-[var(--border-subtle)] overflow-x-auto whitespace-pre-wrap max-h-48 font-[var(--font-mono)] leading-relaxed">
-              {node.sql}
-            </pre>
+            <SqlHighlight code={node.sql} />
           </div>
         )}
       </div>

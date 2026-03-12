@@ -805,7 +805,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] SQL dinamico — marcar como warning
 
 **UX:**
-- [ ] Syntax highlighting del SQL en panel de detalle
+- [x] Syntax highlighting del SQL en panel de detalle
 - [ ] Menu de clic derecho en nodos
 - [ ] Vista compacta para grafos grandes
 - [ ] Notificaciones de aristas manuales obsoletas al re-escanear
@@ -891,7 +891,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Filtros por dataset, tipo, profundidad
 - [x] Drag and drop con persistencia de posiciones
 - [x] Soporte para `SELECT *`, `UNION ALL`, funciones de ventana, UNNEST/STRUCT
-- [ ] Syntax highlighting del SQL
+- [x] Syntax highlighting del SQL
 - [ ] Vista compacta para grafos grandes
 - [ ] Scheduled queries via Data Transfer API
 - [ ] Expansion interactiva de nodos truncados
