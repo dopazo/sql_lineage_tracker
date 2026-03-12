@@ -24,7 +24,7 @@ from lineage_tracker.models import (
     ScanStats,
     _NOOP_PROGRESS,
 )
-from lineage_tracker.parser import parse_view_lineage
+from lineage_tracker.parser import contains_dynamic_sql, parse_view_lineage
 from lineage_tracker.scanner import ScanResult, extract_table_references
 
 logger = logging.getLogger(__name__)
@@ -143,6 +143,23 @@ def build_graph(
 
         parsed_count += 1
         progress("build_parse", f"Parsing lineage for {node_id} ({parsed_count}/{total_views})")
+
+        # Detect dynamic SQL (EXECUTE IMMEDIATE) — lineage cannot be traced
+        if contains_dynamic_sql(node.sql):
+            logger.warning(
+                "View %s contains dynamic SQL (EXECUTE IMMEDIATE) — "
+                "lineage cannot be traced automatically",
+                node_id,
+            )
+            node.status = "warning"
+            node.status_message = (
+                "Contains dynamic SQL (EXECUTE IMMEDIATE) — "
+                "lineage cannot be traced automatically"
+            )
+            for col in node.columns:
+                col.lineage_status = "unknown"
+            parse_errors += 1
+            continue
 
         view_schema = schemas.get(node_id, {})
         if not view_schema:

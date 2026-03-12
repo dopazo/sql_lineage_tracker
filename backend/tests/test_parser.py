@@ -6,7 +6,7 @@ independent of the BigQuery test project fixtures.
 
 import pytest
 
-from lineage_tracker.parser import parse_view_lineage
+from lineage_tracker.parser import contains_dynamic_sql, parse_view_lineage
 
 
 def _get_mapping(edges, source_node, target_column):
@@ -1055,3 +1055,72 @@ class TestCreateTableAsSelect:
         m = _get_mapping(edges, "mydb.users", "id")
         assert m is not None
         assert m.transformation == "direct"
+
+
+class TestDynamicSQL:
+    """Dynamic SQL (EXECUTE IMMEDIATE) detection."""
+
+    def test_execute_immediate_detected(self):
+        sql = "EXECUTE IMMEDIATE 'SELECT 1'"
+        assert contains_dynamic_sql(sql) is True
+
+    def test_execute_immediate_concat(self):
+        sql = """EXECUTE IMMEDIATE CONCAT('SELECT ', col, ' FROM ', tbl)"""
+        assert contains_dynamic_sql(sql) is True
+
+    def test_execute_immediate_variable(self):
+        sql = """
+        DECLARE query STRING;
+        SET query = 'SELECT a, b FROM table1';
+        EXECUTE IMMEDIATE query;
+        """
+        assert contains_dynamic_sql(sql) is True
+
+    def test_execute_immediate_case_insensitive(self):
+        sql = "execute immediate 'SELECT 1'"
+        assert contains_dynamic_sql(sql) is True
+
+    def test_execute_immediate_in_procedure(self):
+        sql = """
+        CREATE PROCEDURE my_dataset.my_proc()
+        BEGIN
+          DECLARE tbl STRING DEFAULT 'my_table';
+          EXECUTE IMMEDIATE CONCAT('SELECT * FROM ', tbl);
+        END;
+        """
+        assert contains_dynamic_sql(sql) is True
+
+    def test_execute_immediate_with_using(self):
+        """EXECUTE IMMEDIATE with USING clause for parameters."""
+        sql = """
+        EXECUTE IMMEDIATE 'SELECT @col FROM table1'
+        USING 'name' AS col;
+        """
+        assert contains_dynamic_sql(sql) is True
+
+    def test_static_sql_not_detected(self):
+        sql = "SELECT id, name FROM mydb.users"
+        assert contains_dynamic_sql(sql) is False
+
+    def test_cte_not_detected(self):
+        sql = """
+        WITH cte AS (SELECT id FROM mydb.users)
+        SELECT id FROM cte
+        """
+        assert contains_dynamic_sql(sql) is False
+
+    def test_execute_in_comment_still_detected(self):
+        """String-based detection catches comments too — acceptable trade-off."""
+        sql = """
+        -- EXECUTE IMMEDIATE 'old code'
+        SELECT id FROM mydb.users
+        """
+        # This is a known limitation: commented-out EXECUTE IMMEDIATE
+        # is still detected. This is a conservative choice — better to
+        # warn unnecessarily than to miss actual dynamic SQL.
+        assert contains_dynamic_sql(sql) is True
+
+    def test_word_execute_alone_not_detected(self):
+        """The word 'execute' without 'immediate' is not flagged."""
+        sql = "SELECT execute_count FROM mydb.stats"
+        assert contains_dynamic_sql(sql) is False

@@ -7,7 +7,8 @@ Supports: SELECT, alias/rename, JOIN, CTE, expressions, aggregations,
 SELECT * with schema expansion, UNION ALL/UNION (columns by position),
 subqueries (derived tables, scalar subqueries, WHERE IN/EXISTS, nested),
 window functions (ROW_NUMBER, RANK, SUM OVER, LAG/LEAD, etc.),
-UNNEST (array flattening), STRUCT (field access and creation).
+UNNEST (array flattening), STRUCT (field access and creation),
+dynamic SQL detection (EXECUTE IMMEDIATE — flagged as warning).
 """
 
 from __future__ import annotations
@@ -25,6 +26,20 @@ from sqlglot.schema import MappingSchema
 from lineage_tracker.models import ColumnMapping, LineageEdge
 
 logger = logging.getLogger(__name__)
+
+# Regex to detect EXECUTE IMMEDIATE (BigQuery dynamic SQL)
+_DYNAMIC_SQL_RE = re.compile(r"\bEXECUTE\s+IMMEDIATE\b", re.IGNORECASE)
+
+
+def contains_dynamic_sql(sql: str) -> bool:
+    """Check if SQL contains dynamic SQL constructs (EXECUTE IMMEDIATE).
+
+    Dynamic SQL builds and executes queries at runtime from string
+    expressions, making static lineage analysis impossible. These
+    should be flagged as warnings so users can resolve lineage manually.
+    """
+    return bool(_DYNAMIC_SQL_RE.search(sql))
+
 
 # SQL aggregate function names
 _AGG_FUNCTIONS = frozenset({

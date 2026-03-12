@@ -802,7 +802,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] `UNNEST` y `STRUCT`
 - [ ] Scheduled queries via Data Transfer API
 - [ ] Routines (`INFORMATION_SCHEMA.ROUTINES`)
-- [ ] SQL dinamico — marcar como warning
+- [x] SQL dinamico — marcar como warning
 
 **UX:**
 - [ ] Syntax highlighting del SQL en panel de detalle
