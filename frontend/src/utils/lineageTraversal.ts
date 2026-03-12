@@ -101,6 +101,76 @@ export function getTraceNodeIds(trace: ColumnTraceEntry[]): Set<string> {
 }
 
 /**
+ * Trace all connections of a table node (upstream + downstream),
+ * without filtering by specific column.
+ * Returns a trace entry for every column in every connected node.
+ */
+export function traceTable(
+  graph: LineageGraph,
+  startNodeId: string
+): ColumnTraceEntry[] {
+  const visited = new Set<string>([startNodeId]);
+  const queue = [startNodeId];
+
+  // BFS through all connected nodes in both directions
+  const { bySource, byTarget } = buildAdjacency(graph.edges);
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+
+    // Downstream: current is source_node → follow to target_node
+    for (const edge of bySource.get(current) ?? []) {
+      if (!visited.has(edge.target_node)) {
+        visited.add(edge.target_node);
+        queue.push(edge.target_node);
+      }
+    }
+
+    // Upstream: current is target_node → follow to source_node
+    for (const edge of byTarget.get(current) ?? []) {
+      if (!visited.has(edge.source_node)) {
+        visited.add(edge.source_node);
+        queue.push(edge.source_node);
+      }
+    }
+  }
+
+  // Build trace entries: all columns of all connected nodes
+  const trace: ColumnTraceEntry[] = [];
+  for (const nodeId of visited) {
+    const node = graph.nodes[nodeId];
+    if (node) {
+      for (const col of node.columns) {
+        trace.push({ nodeId, columnName: col.name });
+      }
+      // If node has no columns, still add it with a placeholder
+      if (node.columns.length === 0) {
+        trace.push({ nodeId, columnName: "" });
+      }
+    }
+  }
+
+  return trace;
+}
+
+/**
+ * Get all edge IDs connecting nodes in a table-level trace.
+ * Simpler than column-level: just check if both endpoints are in the set.
+ */
+export function getTraceEdgeIdsForTable(
+  graph: LineageGraph,
+  traceNodes: Set<string>
+): Set<string> {
+  const edgeIds = new Set<string>();
+  for (const edge of graph.edges) {
+    if (traceNodes.has(edge.source_node) && traceNodes.has(edge.target_node)) {
+      edgeIds.add(edge.id);
+    }
+  }
+  return edgeIds;
+}
+
+/**
  * Get all edge IDs that connect nodes in a column trace.
  * Accepts pre-computed traceNodes set to avoid recomputation.
  */
