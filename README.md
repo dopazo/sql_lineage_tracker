@@ -33,8 +33,20 @@ Given a target table or view, SQL Lineage Tracker traces the complete lineage of
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/) package manager
-- GCP credentials configured ([Application Default Credentials](https://cloud.google.com/docs/authentication/provide-credentials-adc) or `GOOGLE_APPLICATION_CREDENTIALS`)
+- GCP credentials configured (see below)
 - BigQuery project with read permissions on `INFORMATION_SCHEMA`
+
+### Authentication
+
+Option A — Application Default Credentials (recommended for local development):
+```bash
+gcloud auth application-default login
+```
+
+Option B — Service Account key file:
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+```
 
 ### Required GCP permissions
 
