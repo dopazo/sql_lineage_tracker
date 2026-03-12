@@ -590,7 +590,7 @@ async def _run_expand(
 ) -> None:
     """Expand a truncated node by scanning from it and merging into the existing graph."""
     from lineage_tracker.graph import build_graph, format_scan_report
-    from lineage_tracker.scanner import run_scoped_scan
+    from lineage_tracker.scanner import ScanResult, run_scoped_scan
 
     app.state.scan_in_progress = True
     event_bus.reset()
