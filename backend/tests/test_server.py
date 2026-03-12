@@ -383,6 +383,117 @@ class TestManualEdgeDelete:
         assert resp.status_code == 404  # not found as manual edge
 
 
+class TestExpandEndpoint:
+    def _make_graph_with_truncated_node(self) -> LineageGraph:
+        return LineageGraph(
+            metadata=GraphMetadata(
+                project_id="test-project",
+                generated_at="2026-03-09T10:30:00Z",
+                scan_config=ScanConfig(target="staging.view1", datasets=["staging"], depth=1),
+                scan_stats=ScanStats(total_nodes=2, total_edges=0, truncated_nodes=1),
+            ),
+            nodes={
+                "staging.view1": LineageNode(
+                    id="staging.view1",
+                    type="view",
+                    dataset="staging",
+                    name="view1",
+                    columns=[ColumnInfo(name="col1", data_type="STRING")],
+                    source="bigquery_view",
+                    sql="SELECT col1 FROM analytics.t1",
+                ),
+                "analytics.t1": LineageNode(
+                    id="analytics.t1",
+                    type="table",
+                    dataset="analytics",
+                    name="t1",
+                    source="unknown",
+                    status="truncated",
+                    status_message="Depth limit reached (2 dataset hops > 1)",
+                ),
+            },
+            edges=[],
+        )
+
+    def test_expand_rejected_when_no_scan_mode(self, tmp_path: Path):
+        graph = self._make_graph_with_truncated_node()
+        client = _app_with_graph(tmp_path, graph)
+        resp = client.post("/api/expand", json={"node_id": "analytics.t1"})
+        assert resp.status_code == 400
+        assert "disabled" in resp.json()["error"]
+
+    def test_expand_rejected_when_no_graph(self, tmp_path: Path):
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        app.state.no_scan = False
+        app.state.extractor = "fake"
+        client = TestClient(app)
+        resp = client.post("/api/expand", json={"node_id": "analytics.t1"})
+        assert resp.status_code == 400
+        assert "No graph" in resp.json()["error"]
+
+    def test_expand_rejected_when_node_not_found(self, tmp_path: Path):
+        graph = self._make_graph_with_truncated_node()
+        save_graph(graph, tmp_path, "test-project")
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        app.state.no_scan = False
+        app.state.extractor = "fake"
+        client = TestClient(app)
+        resp = client.post("/api/expand", json={"node_id": "nonexistent.table"})
+        assert resp.status_code == 404
+
+    def test_expand_rejected_when_node_not_truncated(self, tmp_path: Path):
+        graph = self._make_graph_with_truncated_node()
+        save_graph(graph, tmp_path, "test-project")
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        app.state.no_scan = False
+        app.state.extractor = "fake"
+        client = TestClient(app)
+        resp = client.post("/api/expand", json={"node_id": "staging.view1"})
+        assert resp.status_code == 400
+        assert "not truncated" in resp.json()["error"]
+
+    def test_expand_rejected_missing_node_id(self, tmp_path: Path):
+        graph = self._make_graph_with_truncated_node()
+        save_graph(graph, tmp_path, "test-project")
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        app.state.no_scan = False
+        app.state.extractor = "fake"
+        client = TestClient(app)
+        resp = client.post("/api/expand", json={})
+        assert resp.status_code == 422
+
+    def test_expand_rejected_when_scan_in_progress(self, tmp_path: Path):
+        graph = self._make_graph_with_truncated_node()
+        save_graph(graph, tmp_path, "test-project")
+        app = create_app(
+            project_id="test-project",
+            data_dir=tmp_path,
+            no_scan=True,
+        )
+        app.state.no_scan = False
+        app.state.extractor = "fake"
+        app.state.scan_in_progress = True
+        client = TestClient(app)
+        resp = client.post("/api/expand", json={"node_id": "analytics.t1"})
+        assert resp.status_code == 409
+
+
 class TestScanEventsEndpoint:
     def test_sse_endpoint_registered(self, tmp_path: Path):
         """Verify the SSE endpoint route exists on the app."""

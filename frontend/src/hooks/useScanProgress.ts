@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { ScanConfig, ScanEvent } from "../types/graph";
-import { startScan, subscribeScanEvents } from "../api/client";
+import { startScan, expandNode, subscribeScanEvents } from "../api/client";
 
 export function useScanProgress() {
   const [scanning, setScanning] = useState(false);
@@ -59,9 +59,45 @@ export function useScanProgress() {
     []
   );
 
+  const runExpand = useCallback(
+    async (nodeId: string, onComplete: () => void) => {
+      setScanning(true);
+      setMessages([]);
+      setScanError(null);
+
+      try {
+        await expandNode(nodeId);
+
+        cleanupRef.current = subscribeScanEvents(
+          (event: ScanEvent) => {
+            setMessages((prev) => [...prev, event.message]);
+
+            if (event.type === "complete") {
+              teardown();
+              onComplete();
+            } else if (event.type === "error") {
+              setScanError(event.message);
+              teardown();
+            }
+          },
+          () => {
+            setScanError("Lost connection to server");
+            setScanning(false);
+          }
+        );
+      } catch (err) {
+        setScanError(
+          err instanceof Error ? err.message : "Failed to expand node"
+        );
+        setScanning(false);
+      }
+    },
+    []
+  );
+
   const cancelScan = useCallback(() => {
     teardown();
   }, []);
 
-  return { scanning, messages, scanError, runScan, cancelScan };
+  return { scanning, messages, scanError, runScan, runExpand, cancelScan };
 }

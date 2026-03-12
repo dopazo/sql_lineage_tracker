@@ -23,6 +23,7 @@ interface TableNodeData {
   missingUpstream: boolean;
   missingDownstream: boolean;
   onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void;
+  onExpandNode?: (nodeId: string) => void;
   [key: string]: unknown;
 }
 
@@ -34,6 +35,7 @@ function TableNodeComponent({ data }: NodeProps) {
     missingUpstream = false,
     missingDownstream = false,
     onGapClick,
+    onExpandNode,
   } = data as TableNodeData;
   const [expanded, setExpanded] = useState(false);
   const badge = TYPE_BADGES[lineageNode.type] ?? TYPE_BADGES.table;
@@ -151,6 +153,21 @@ function TableNodeComponent({ data }: NodeProps) {
             );
           })}
         </div>
+      )}
+
+      {/* Expand truncated node */}
+      {lineageNode.status === "truncated" && onExpandNode && (
+        <button
+          className="w-full px-3.5 py-2 text-xs text-blue-400 hover:bg-blue-500/10 border-t border-dashed border-blue-500/30 transition-colors flex items-center justify-center gap-1.5"
+          onClick={(e) => {
+            e.stopPropagation();
+            onExpandNode(lineageNode.id);
+          }}
+          title="Scan dependencies from this node"
+        >
+          <span className="text-[10px]">&#x25B6;</span>
+          Expand
+        </button>
       )}
     </div>
   );
