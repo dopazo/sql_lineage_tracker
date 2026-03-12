@@ -43,10 +43,18 @@ Proyecto: `rational-world-470315-b4` (sandbox, sin billing)
 ║                                                                                          ║
 ║  raw_data.events ──→ staging.raw_sessions ──→ staging.sessions ──→ analytics.user_funnel ║
 ║                                                                                          ║
+╠══════════════════════════════════════════════════════════════════════════════════════════╣
+║  MANUAL EDGES — Procesos sin lineage SQL automático                                     ║
+╠══════════════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                          ║
+║  analytics.customer_summary ──→ staging.script_crear_resumen ~~manual~~→ analytics.resumen_creado ║
+║                                                                                          ║
+║  staging.input_proceso_python ~~manual~~→ staging.output_proceso_python                  ║
+║                                                                                          ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
-**Total: 20 nodos, 5 datasets, hasta 4 niveles de profundidad.**
+**Total: 24 nodos, 5 datasets, hasta 4 niveles de profundidad + 2 manual edges.**
 
 ---
 
@@ -460,6 +468,54 @@ FROM user_segments
 
 ---
 
+### staging.script_crear_resumen (view) — Manual edge: script → tabla
+
+```sql
+-- create or replace table `rational-world-470315-b4.analytics.resumen_creado`
+SELECT
+  nombre_cliente,
+  pais,
+  total_orders,
+  total_spent
+FROM `rational-world-470315-b4.analytics.customer_summary`
+```
+
+| Column | Type |
+|---|---|
+| nombre_cliente | STRING |
+| pais | STRING |
+| total_orders | INT64 |
+| total_spent | FLOAT64 |
+
+### analytics.resumen_creado (table) — Creada manualmente desde script_crear_resumen
+
+| Column | Type |
+|---|---|
+| nombre_cliente | STRING |
+| pais | STRING |
+| total_orders | INT64 |
+| total_spent | FLOAT64 |
+
+### staging.input_proceso_python (table) — Input para proceso externo Python
+
+| Column | Type |
+|---|---|
+| user_id | STRING |
+| segment | STRING |
+| pages_visited | INT64 |
+| total_time_spent | INT64 |
+
+### staging.output_proceso_python (table) — Output de proceso externo Python
+
+| Column | Type |
+|---|---|
+| user_id | STRING |
+| segment | STRING |
+| score | FLOAT64 |
+| recommendation | STRING |
+
+---
+
 ## SQL patterns cubiertos
 
 | Vista | Patrones SQL |
@@ -478,6 +534,8 @@ FROM user_segments
 | `staging.sessions` | **Subquery inline en FROM**, TIMESTAMP_DIFF |
 | `analytics.user_funnel` | **Múltiples CTEs encadenadas**, CASE WHEN multi-rama, COUNT(DISTINCT), SUM, MAX |
 | `reporting.executive_dashboard` | **Convergencia cross-chain** (une cadenas A y B), NULLIF, ROUND |
+| `staging.script_crear_resumen` | **Comentario SQL** `-- create or replace table`, SELECT directo |
+| `staging.input_proceso_python` / `staging.output_proceso_python` | **Proceso externo** (sin SQL), requiere manual edge |
 
 ## Casos de uso del lineage tracker cubiertos
 
@@ -492,3 +550,5 @@ FROM user_segments
 | Parser: columna sin fuente directa | Window functions en `analytics.customer_ranking` |
 | Parser: subquery como fuente | `staging.sessions` (FROM subquery inline) |
 | Parser: CTEs encadenadas | `analytics.user_funnel` (dos CTEs que se referencian) |
+| Manual edge: proceso externo | `staging.input_proceso_python` → `staging.output_proceso_python` (no hay SQL entre ellas) |
+| Manual edge: script como vista | `staging.script_crear_resumen` → `analytics.resumen_creado` (vista con comentario CREATE TABLE) |

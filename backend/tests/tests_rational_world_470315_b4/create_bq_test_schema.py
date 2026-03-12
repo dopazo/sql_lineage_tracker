@@ -301,6 +301,32 @@ FROM `rational-world-470315-b4.analytics.customer_summary`
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 10b. Script manual → tabla creada manualmente (extiende Cadena A)
+#      Patrón: vista con comentario "-- create or replace table" usada
+#      como script manual para crear una tabla
+# ──────────────────────────────────────────────────────────────────────────────
+
+print("\n── Script manual + tabla creada (Cadena A) ──────────────────────────────")
+
+create_view("staging", "script_crear_resumen", """\
+-- create or replace table `rational-world-470315-b4.analytics.resumen_creado`
+SELECT
+  nombre_cliente,
+  pais,
+  total_orders,
+  total_spent
+FROM `rational-world-470315-b4.analytics.customer_summary`
+""")
+
+create_table("analytics", "resumen_creado", [
+    bigquery.SchemaField("nombre_cliente", "STRING"),
+    bigquery.SchemaField("pais",           "STRING"),
+    bigquery.SchemaField("total_orders",   "INT64"),
+    bigquery.SchemaField("total_spent",    "FLOAT64"),
+])
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 11. Cadena profunda: raw_data.events → 3 capas (niveles 1-3)
 #     Patrón: GROUP BY desde raw, subquery inline en FROM, TIMESTAMP_DIFF,
 #             múltiples CTEs encadenadas, CASE WHEN multi-rama
@@ -373,6 +399,28 @@ FROM user_segments
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 11b. Proceso externo Python (extiende cadena profunda)
+#      Patrón: dos tablas sin relación SQL — conectadas por proceso externo
+# ──────────────────────────────────────────────────────────────────────────────
+
+print("\n── Tablas proceso externo Python (cadena profunda) ──────────────────────")
+
+create_table("staging", "input_proceso_python", [
+    bigquery.SchemaField("user_id",          "STRING"),
+    bigquery.SchemaField("segment",          "STRING"),
+    bigquery.SchemaField("pages_visited",    "INT64"),
+    bigquery.SchemaField("total_time_spent", "INT64"),
+])
+
+create_table("staging", "output_proceso_python", [
+    bigquery.SchemaField("user_id",        "STRING"),
+    bigquery.SchemaField("segment",        "STRING"),
+    bigquery.SchemaField("score",          "FLOAT64"),
+    bigquery.SchemaField("recommendation", "STRING"),
+])
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 12. Vista reporting (convergencia cross-chain A + B)
 #     Patrón: LEFT JOIN entre dos cadenas independientes, NULLIF, ROUND
 # ──────────────────────────────────────────────────────────────────────────────
@@ -417,5 +465,8 @@ Grafo resultante:
 
   raw_data.events ──→ staging.raw_sessions ──→ staging.sessions ──→ analytics.user_funnel
 
-Total: 19 nodos, 5 datasets, hasta 4 niveles de profundidad
+  analytics.customer_summary ──→ staging.script_crear_resumen ~~manual~~→ analytics.resumen_creado
+  staging.input_proceso_python ~~manual~~→ staging.output_proceso_python
+
+Total: 24 nodos, 5 datasets, hasta 4 niveles de profundidad + 2 manual edges
 """)

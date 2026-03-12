@@ -116,6 +116,20 @@ SCHEMAS = {
         "prev_customer_spent": "FLOAT64",
     },
 
+    # ── Script manual → tabla creada manualmente (extiende cadena A) ─────────
+    "staging.script_crear_resumen": {
+        "nombre_cliente": "STRING",
+        "pais": "STRING",
+        "total_orders": "INT64",
+        "total_spent": "FLOAT64",
+    },
+    "analytics.resumen_creado": {
+        "nombre_cliente": "STRING",
+        "pais": "STRING",
+        "total_orders": "INT64",
+        "total_spent": "FLOAT64",
+    },
+
     # ── Cadena profunda: eventos → sesiones (4 niveles) ───────────────────────
     "raw_data.events": {
         "event_id": "STRING",
@@ -145,6 +159,20 @@ SCHEMAS = {
         "total_time_spent": "INT64",
         "last_seen": "TIMESTAMP",
         "segment": "STRING",
+    },
+
+    # ── Proceso externo Python (extiende cadena profunda) ────────────────────
+    "staging.input_proceso_python": {
+        "user_id": "STRING",
+        "segment": "STRING",
+        "pages_visited": "INT64",
+        "total_time_spent": "INT64",
+    },
+    "staging.output_proceso_python": {
+        "user_id": "STRING",
+        "segment": "STRING",
+        "score": "FLOAT64",
+        "recommendation": "STRING",
     },
 
     # ── Convergencia cross-chain A + B (reporting) ───────────────────────────
@@ -283,6 +311,17 @@ FROM `rational-world-470315-b4.staging.transactions_clean`""",
   ROW_NUMBER() OVER (PARTITION BY pais ORDER BY total_spent DESC) AS rank_in_country,
   RANK() OVER (ORDER BY total_spent DESC) AS global_rank,
   LAG(total_spent) OVER (PARTITION BY pais ORDER BY total_spent DESC) AS prev_customer_spent
+FROM `rational-world-470315-b4.analytics.customer_summary`""",
+
+    # ── Script manual (extiende cadena A) ────────────────────────────────────
+
+    # Patrones: comentario -- create or replace table al inicio, vista usada como script manual
+    "staging.script_crear_resumen": """-- create or replace table `rational-world-470315-b4.analytics.resumen_creado`
+SELECT
+  nombre_cliente,
+  pais,
+  total_orders,
+  total_spent
 FROM `rational-world-470315-b4.analytics.customer_summary`""",
 
     # ── Cadena profunda: eventos → sesiones (4 niveles) ───────────────────────
