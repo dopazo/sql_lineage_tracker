@@ -806,7 +806,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 
 **UX:**
 - [x] Syntax highlighting del SQL en panel de detalle
-- [ ] Menu de clic derecho en nodos
+- [x] Menu de clic derecho en nodos
 - [ ] Vista compacta para grafos grandes
 - [ ] Notificaciones de aristas manuales obsoletas al re-escanear
 - [ ] Busqueda por tabla (mostrar todas sus conexiones sin filtrar por campo)

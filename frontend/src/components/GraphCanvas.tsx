@@ -22,6 +22,7 @@ import { ScanProgressBar } from "./ScanProgressBar";
 import { NodeDetailPanel } from "./NodeDetailPanel";
 import { EdgeDetailPanel } from "./EdgeDetailPanel";
 import { ManualEdgeModal } from "./ManualEdgeModal";
+import { NodeContextMenu } from "./NodeContextMenu";
 import { FilterPanel } from "./FilterPanel";
 import { useColumnSearch } from "../hooks/useColumnSearch";
 import { useGraphFilters } from "../hooks/useGraphFilters";
@@ -193,6 +194,14 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const [manualEdgeModal, setManualEdgeModal] =
     useState<ManualEdgeModalState | null>(null);
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    node: LineageNode;
+    position: { x: number; y: number };
+  } | null>(null);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
   const openManualEdgeModal = useCallback(
     (
       anchorNodeId: string,
@@ -276,6 +285,25 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     [filteredGraph]
   );
 
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      event.preventDefault();
+      const lineageNode = filteredGraph.nodes[node.id];
+      if (lineageNode) {
+        setContextMenu({
+          node: { ...lineageNode, id: node.id } as LineageNode,
+          position: { x: event.clientX, y: event.clientY },
+        });
+      }
+    },
+    [filteredGraph]
+  );
+
+  // Close context menu on pane click
+  const onPaneClick = useCallback(() => {
+    closeContextMenu();
+  }, [closeContextMenu]);
+
   const handleRescan = useCallback(
     (config: ScanConfig) => {
       runScan(config, onGraphReload);
@@ -331,6 +359,8 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
+            onNodeContextMenu={onNodeContextMenu}
+            onPaneClick={onPaneClick}
             onNodeDragStop={handleNodeDragStop}
             nodeTypes={rfNodeTypes}
             fitView
@@ -395,6 +425,51 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
           editingEdge={manualEdgeModal.editingEdge}
           onClose={() => setManualEdgeModal(null)}
           onSaved={handleManualEdgeSaved}
+        />
+      )}
+
+      {contextMenu && (
+        <NodeContextMenu
+          node={contextMenu.node}
+          position={contextMenu.position}
+          hasUpstreamEdges={filteredGraph.edges.some(
+            (e) => e.target_node === contextMenu.node.id
+          )}
+          hasDownstreamEdges={filteredGraph.edges.some(
+            (e) => e.source_node === contextMenu.node.id
+          )}
+          onClose={closeContextMenu}
+          onViewDetails={() => {
+            setSelectedNode(contextMenu.node);
+            setSelectedEdge(null);
+          }}
+          onAddUpstream={() =>
+            openManualEdgeModal(contextMenu.node.id, "upstream")
+          }
+          onAddDownstream={() =>
+            openManualEdgeModal(contextMenu.node.id, "downstream")
+          }
+          onExpandNode={
+            contextMenu.node.status === "truncated"
+              ? () => handleExpandNode(contextMenu.node.id)
+              : undefined
+          }
+          onFocusConnections={() => {
+            const nodeId = contextMenu.node.id;
+            const node = filteredGraph.nodes[nodeId];
+            if (node && node.columns.length > 0) {
+              selectResult({
+                nodeId,
+                nodeName: `${node.dataset}.${node.name}`,
+                columnName: node.columns[0].name,
+                dataType: node.columns[0].data_type,
+              });
+            }
+          }}
+          onCopyName={() => {
+            const node = contextMenu.node;
+            navigator.clipboard.writeText(`${node.dataset}.${node.name}`);
+          }}
         />
       )}
     </div>
