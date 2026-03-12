@@ -809,7 +809,7 @@ uv run sql-lineage-tracker serve --project mi-proyecto --target analytics.monthl
 - [x] Menu de clic derecho en nodos
 - [ ] Vista compacta para grafos grandes
 - [ ] Notificaciones de aristas manuales obsoletas al re-escanear
-- [ ] Busqueda por tabla (mostrar todas sus conexiones sin filtrar por campo)
+- [x] Busqueda por tabla (mostrar todas sus conexiones sin filtrar por campo)
 - [x] Expansion de nodos truncados (scan parcial adicional)
 
 ---

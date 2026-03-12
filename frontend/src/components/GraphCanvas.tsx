@@ -457,12 +457,13 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
           onFocusConnections={() => {
             const nodeId = contextMenu.node.id;
             const node = filteredGraph.nodes[nodeId];
-            if (node && node.columns.length > 0) {
+            if (node) {
               selectResult({
                 nodeId,
                 nodeName: `${node.dataset}.${node.name}`,
-                columnName: node.columns[0].name,
-                dataType: node.columns[0].data_type,
+                columnName: "",
+                dataType: node.type,
+                isTableResult: true,
               });
             }
           }}

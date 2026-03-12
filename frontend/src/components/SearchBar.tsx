@@ -42,7 +42,7 @@ export function SearchBar({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search columns..."
+            placeholder="Search tables or columns..."
             value={query}
             onChange={(e) => {
               onQueryChange(e.target.value);
@@ -75,15 +75,44 @@ export function SearchBar({
                 setOpen(false);
               }}
             >
-              <span className="font-medium text-[var(--text-primary)] font-[var(--font-mono)]">
-                {r.columnName}
-              </span>
-              <span className="text-[var(--text-muted)] text-xs font-[var(--font-mono)]">
-                {r.dataType}
-              </span>
-              <span className="text-[var(--text-muted)] ml-auto text-xs truncate max-w-[140px]">
-                {r.nodeName}
-              </span>
+              {r.isTableResult ? (
+                <>
+                  <svg
+                    className="shrink-0 text-[var(--accent-purple)]"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M3 9h18" />
+                    <path d="M3 15h18" />
+                    <path d="M9 3v18" />
+                  </svg>
+                  <span className="font-medium text-[var(--text-primary)]">
+                    {r.nodeName}
+                  </span>
+                  <span className="text-[var(--text-muted)] text-xs ml-auto">
+                    {r.dataType}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-[var(--text-primary)] font-[var(--font-mono)]">
+                    {r.columnName}
+                  </span>
+                  <span className="text-[var(--text-muted)] text-xs font-[var(--font-mono)]">
+                    {r.dataType}
+                  </span>
+                  <span className="text-[var(--text-muted)] ml-auto text-xs truncate max-w-[140px]">
+                    {r.nodeName}
+                  </span>
+                </>
+              )}
             </button>
           ))}
         </div>

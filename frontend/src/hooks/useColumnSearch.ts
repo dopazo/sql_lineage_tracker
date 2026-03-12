@@ -2,8 +2,10 @@ import { useState, useMemo, useCallback } from "react";
 import type { LineageGraph } from "../types/graph";
 import {
   traceColumn,
+  traceTable,
   getTraceNodeIds,
   getTraceEdgeIds,
+  getTraceEdgeIdsForTable,
   type ColumnTraceEntry,
 } from "../utils/lineageTraversal";
 
@@ -12,6 +14,7 @@ export interface SearchResult {
   nodeName: string;
   columnName: string;
   dataType: string;
+  isTableResult?: boolean;
 }
 
 export function useColumnSearch(graph: LineageGraph | null) {
@@ -19,19 +22,38 @@ export function useColumnSearch(graph: LineageGraph | null) {
   const [activeTrace, setActiveTrace] = useState<ColumnTraceEntry[] | null>(
     null
   );
+  const [isTableTrace, setIsTableTrace] = useState(false);
 
   const searchResults = useMemo<SearchResult[]>(() => {
     if (!graph || query.length < 2) return [];
 
     const lowerQuery = query.toLowerCase();
-    const results: SearchResult[] = [];
+    const tableResults: SearchResult[] = [];
+    const columnResults: SearchResult[] = [];
 
     for (const [nodeId, node] of Object.entries(graph.nodes)) {
+      const fullName = `${node.dataset}.${node.name}`;
+
+      // Match table/view name
+      if (
+        node.name.toLowerCase().includes(lowerQuery) ||
+        fullName.toLowerCase().includes(lowerQuery)
+      ) {
+        tableResults.push({
+          nodeId,
+          nodeName: fullName,
+          columnName: "",
+          dataType: node.type,
+          isTableResult: true,
+        });
+      }
+
+      // Match column names
       for (const col of node.columns) {
         if (col.name.toLowerCase().includes(lowerQuery)) {
-          results.push({
+          columnResults.push({
             nodeId,
-            nodeName: `${node.dataset}.${node.name}`,
+            nodeName: fullName,
             columnName: col.name,
             dataType: col.data_type,
           });
@@ -39,20 +61,29 @@ export function useColumnSearch(graph: LineageGraph | null) {
       }
     }
 
-    return results.slice(0, 50);
+    // Tables first, then columns, capped at 50
+    return [...tableResults, ...columnResults].slice(0, 50);
   }, [graph, query]);
 
   const selectResult = useCallback(
     (result: SearchResult) => {
       if (!graph) return;
-      const trace = traceColumn(graph, result.nodeId, result.columnName);
-      setActiveTrace(trace);
+      if (result.isTableResult) {
+        const trace = traceTable(graph, result.nodeId);
+        setActiveTrace(trace);
+        setIsTableTrace(true);
+      } else {
+        const trace = traceColumn(graph, result.nodeId, result.columnName);
+        setActiveTrace(trace);
+        setIsTableTrace(false);
+      }
     },
     [graph]
   );
 
   const clearTrace = useCallback(() => {
     setActiveTrace(null);
+    setIsTableTrace(false);
     setQuery("");
   }, []);
 
@@ -62,18 +93,26 @@ export function useColumnSearch(graph: LineageGraph | null) {
   );
 
   const traceEdgeIds = useMemo(
-    () => (graph && activeTrace && traceNodeIds ? getTraceEdgeIds(graph, activeTrace, traceNodeIds) : null),
-    [graph, activeTrace, traceNodeIds]
+    () => {
+      if (!graph || !activeTrace || !traceNodeIds) return null;
+      if (isTableTrace) {
+        return getTraceEdgeIdsForTable(graph, traceNodeIds);
+      }
+      return getTraceEdgeIds(graph, activeTrace, traceNodeIds);
+    },
+    [graph, activeTrace, traceNodeIds, isTableTrace]
   );
 
   const getHighlightedColumns = useCallback(
     (nodeId: string): string[] => {
       if (!activeTrace) return [];
+      // For table trace, don't highlight specific columns
+      if (isTableTrace) return [];
       return activeTrace
         .filter((t) => t.nodeId === nodeId)
         .map((t) => t.columnName);
     },
-    [activeTrace]
+    [activeTrace, isTableTrace]
   );
 
   return {
