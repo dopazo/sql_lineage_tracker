@@ -7,8 +7,8 @@ Parser behaviour observed for window functions:
   - Pass-through columns (no OVER clause) → "direct"
   - ROW_NUMBER() OVER (PARTITION BY x ORDER BY y) → "expression"
     source_columns includes the columns referenced in PARTITION BY and ORDER BY
-  - RANK()  OVER (ORDER BY y)                     → "aggregation"
-  - LAG(col) OVER (PARTITION BY x ORDER BY y)     → "aggregation"
+  - RANK()  OVER (ORDER BY y)                     → "expression"
+  - LAG(col) OVER (PARTITION BY x ORDER BY y)     → "expression"
     source_columns includes both the LAG argument and the PARTITION BY / ORDER BY columns
 """
 
@@ -116,13 +116,13 @@ class TestCustomerRanking:
         assert "pais" in m.source_columns
         assert "total_spent" in m.source_columns
 
-    # ── RANK() OVER (ORDER BY …) → aggregation ────────────────────────────────
+    # ── RANK() OVER (ORDER BY …) → expression ─────────────────────────────────
 
-    def test_global_rank_is_aggregation(self):
-        """RANK() without PARTITION BY is classified as 'aggregation'."""
+    def test_global_rank_is_expression(self):
+        """RANK() OVER is a window function, classified as 'expression'."""
         m = _get_mapping(self.edges, self.SOURCE, "global_rank")
         assert m is not None
-        assert m.transformation == "aggregation"
+        assert m.transformation == "expression"
 
     def test_global_rank_expression_contains_rank(self):
         m = _get_mapping(self.edges, self.SOURCE, "global_rank")
@@ -140,13 +140,13 @@ class TestCustomerRanking:
         assert m is not None
         assert "total_spent" in m.source_columns
 
-    # ── LAG(col) OVER (PARTITION BY … ORDER BY …) → aggregation ──────────────
+    # ── LAG(col) OVER (PARTITION BY … ORDER BY …) → expression ────────────────
 
-    def test_prev_customer_spent_is_aggregation(self):
-        """LAG() window function is classified as 'aggregation'."""
+    def test_prev_customer_spent_is_expression(self):
+        """LAG() OVER is a window function, classified as 'expression'."""
         m = _get_mapping(self.edges, self.SOURCE, "prev_customer_spent")
         assert m is not None
-        assert m.transformation == "aggregation"
+        assert m.transformation == "expression"
 
     def test_prev_customer_spent_expression_contains_lag(self):
         m = _get_mapping(self.edges, self.SOURCE, "prev_customer_spent")
