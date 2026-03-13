@@ -1,6 +1,6 @@
 # Issue: Lineage "unknown" en vistas con SELECTs anidados (derived tables)
 
-**Estado:** 🔴 Abierto  
+**Estado:** 🟢 Resuelto  
 **Severidad:** Alta — afecta a cualquier vista con subqueries anidadas  
 **Componente:** `backend/src/lineage_tracker/parser.py`
 
@@ -159,8 +159,8 @@ Patrones comunes en BigQuery donde esto ocurre:
 
 ## Tareas
 
-- [ ] Escribir tests que reproduzcan el fallo con SQL de 2 y 3 niveles de anidación
-- [ ] Implementar la solución elegida (A, B o C)
-- [ ] Verificar que el lineage de `FT_OX_DIST_CUAD` se resuelve correctamente
-- [ ] Verificar que no hay regresiones en los tests existentes
-- [ ] Actualizar documentación del parser si cambia la arquitectura
+- [x] Escribir tests que reproduzcan el fallo con SQL de 2 y 3 niveles de anidación
+- [x] Implementar la solución elegida (A, B o C)
+- [x] Verificar que el lineage de `FT_OX_DIST_CUAD` se resuelve correctamente
+- [x] Verificar que no hay regresiones en los tests existentes
+- [x] Actualizar documentación del parser si cambia la arquitectura

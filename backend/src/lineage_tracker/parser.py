@@ -68,6 +68,10 @@ def parse_view_lineage(
     # Normalize SQL: strip project prefixes from fully-qualified table refs
     normalized_sql = _strip_project_prefix(sql)
 
+    # Assign aliases to anonymous derived tables (subqueries in FROM/JOIN)
+    # so that sqlglot can resolve columns through nested subqueries
+    normalized_sql = _normalize_derived_tables(normalized_sql)
+
     # Build schema in sqlglot nested format: {db: {table: {col: type}}}
     sg_schema = _build_sqlglot_schema(schemas)
 
@@ -195,6 +199,10 @@ def _expand_star(
     `SELECT *` and `SELECT t.*` into individual column references
     based on the provided schema.
 
+    Before qualifying, assigns synthetic aliases to anonymous derived
+    tables (subqueries in FROM/JOIN without aliases) so that
+    qualify_columns can resolve columns through nested subqueries.
+
     Returns the original SQL unchanged if expansion fails or if
     there are no star expressions.
     """
@@ -210,13 +218,52 @@ def _expand_star(
     if not list(parsed.find_all(exp.Star)):
         return sql
 
+    # Assign aliases to anonymous derived tables so qualify_columns
+    # can resolve columns through nested subqueries
+    _assign_derived_table_aliases(parsed)
+
     try:
-        schema_obj = MappingSchema(mapping=sg_schema, dialect="bigquery")
+        schema_obj = MappingSchema(schema=sg_schema, dialect="bigquery")
         qualified = qualify_columns(parsed, schema=schema_obj, dialect="bigquery")
         return qualified.sql(dialect="bigquery")
     except Exception:
         logger.debug("Failed to expand SELECT * for SQL: %s...", sql[:80])
         return sql
+
+
+def _normalize_derived_tables(sql: str) -> str:
+    """Assign synthetic aliases to anonymous derived tables in the SQL string.
+
+    Parses the SQL, assigns aliases to unnamed subqueries in FROM/JOIN,
+    and returns the modified SQL. Returns the original SQL if parsing fails.
+    """
+    try:
+        parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+    except Exception:
+        return sql
+
+    if parsed is None:
+        return sql
+
+    _assign_derived_table_aliases(parsed)
+    return parsed.sql(dialect="bigquery")
+
+
+def _assign_derived_table_aliases(parsed: exp.Expression) -> None:
+    """Assign synthetic aliases to anonymous derived tables (subqueries in FROM/JOIN).
+
+    sqlglot's qualify_columns needs named sources to resolve column references.
+    Unnamed subqueries in FROM or JOIN clauses cause qualify_columns to produce
+    empty-identifier qualifiers (e.g. ``.col). This function walks the AST and
+    assigns names like _subq_0, _subq_1, etc. to any Subquery that lacks an alias.
+
+    Modifies the AST in place.
+    """
+    counter = 0
+    for node in parsed.find_all(exp.Subquery):
+        if isinstance(node.parent, (exp.From, exp.Join)) and not node.alias:
+            node.set("alias", exp.TableAlias(this=exp.to_identifier(f"_subq_{counter}")))
+            counter += 1
 
 
 def _build_sqlglot_schema(
