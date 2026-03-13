@@ -171,6 +171,11 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     toggleEdgeType,
     setMaxDepth,
     resetFilters,
+    pruneUpstream,
+    restorePrune,
+    prunePoints,
+    hasPrunedNodes,
+    clearAllPrunes,
   } = useGraphFilters(graph);
 
   const {
@@ -350,6 +355,10 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             onToggleEdgeType={toggleEdgeType}
             onSetMaxDepth={setMaxDepth}
             onReset={resetFilters}
+            prunePoints={prunePoints}
+            hasPrunedNodes={hasPrunedNodes}
+            onRestorePrune={restorePrune}
+            onClearAllPrunes={clearAllPrunes}
           />
         )}
           <ReactFlow
@@ -467,6 +476,12 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
               });
             }
           }}
+          onPruneUpstream={() => pruneUpstream(contextMenu.node.id)}
+          onRestorePrune={
+            prunePoints.has(contextMenu.node.id)
+              ? () => restorePrune(contextMenu.node.id)
+              : undefined
+          }
           onCopyName={() => {
             const node = contextMenu.node;
             navigator.clipboard.writeText(`${node.dataset}.${node.name}`);

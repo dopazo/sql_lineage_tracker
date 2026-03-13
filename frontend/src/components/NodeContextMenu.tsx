@@ -22,6 +22,8 @@ interface NodeContextMenuProps {
   onExpandNode?: () => void;
   onFocusConnections: () => void;
   onCopyName: () => void;
+  onPruneUpstream?: () => void;
+  onRestorePrune?: () => void;
 }
 
 export function NodeContextMenu({
@@ -36,6 +38,8 @@ export function NodeContextMenu({
   onExpandNode,
   onFocusConnections,
   onCopyName,
+  onPruneUpstream,
+  onRestorePrune,
 }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [focusIndex, setFocusIndex] = useState(-1);
@@ -73,16 +77,35 @@ export function NodeContextMenu({
           accent: "text-blue-400",
         }]
       : []),
+    ...(onPruneUpstream
+      ? [{
+          label: "Prune upstream",
+          icon: "\u2702",
+          action: onPruneUpstream,
+          separator: true,
+          disabled: !hasUpstreamEdges,
+        }]
+      : []),
+    ...(onRestorePrune
+      ? [{
+          label: "Restore pruned branch",
+          icon: "\u21A9",
+          action: onRestorePrune,
+          separator: !onPruneUpstream,
+          accent: "text-green-400",
+        }]
+      : []),
     {
       label: "Copy name",
       icon: "\u2398",
       action: onCopyName,
-      separator: true,
+      separator: !onPruneUpstream && !onRestorePrune,
     },
   ], [
     node.status, hasUpstreamEdges, hasDownstreamEdges,
     onViewDetails, onFocusConnections, onAddUpstream,
     onAddDownstream, onExpandNode, onCopyName,
+    onPruneUpstream, onRestorePrune,
   ]);
 
   const enabledIndices = useMemo(
