@@ -20,6 +20,7 @@ from collections import defaultdict
 import sqlglot
 from sqlglot import exp
 from sqlglot.lineage import lineage
+from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 from sqlglot.optimizer.qualify_columns import qualify_columns
 from sqlglot.schema import MappingSchema
 
@@ -71,6 +72,14 @@ def parse_view_lineage(
     # Assign aliases to anonymous derived tables (subqueries in FROM/JOIN)
     # so that sqlglot can resolve columns through nested subqueries
     normalized_sql = _normalize_derived_tables(normalized_sql)
+
+    # Normalize identifiers for BigQuery: lowercase column names and aliases
+    # while preserving table/dataset names (which are case-sensitive in BQ).
+    # This is required because MappingSchema normalizes column names to
+    # lowercase, but the SQL may have uppercase column names (common in BQ).
+    # Without this, qualify_columns() in _expand_star fails with
+    # "Unknown column" errors for any SQL with JOINs.
+    normalized_sql = _normalize_bq_identifiers(normalized_sql)
 
     # Build schema in sqlglot nested format: {db: {table: {col: type}}}
     sg_schema = _build_sqlglot_schema(schemas)
@@ -189,6 +198,33 @@ def _strip_project_prefix(sql: str) -> str:
     return parsed.sql(dialect="bigquery")
 
 
+def _normalize_bq_identifiers(sql: str) -> str:
+    """Normalize BigQuery SQL identifiers for case-insensitive matching.
+
+    BigQuery column names are case-insensitive, but sqlglot's MappingSchema
+    normalizes them to lowercase. This function normalizes the SQL to match:
+    - Column names and aliases → lowercase
+    - Table and dataset names → preserved (case-sensitive in BigQuery)
+
+    Without this, qualify_columns() and lineage() can fail when SQL uses
+    uppercase column names (common in BigQuery) because they don't match
+    the lowercase schema keys.
+    """
+    try:
+        parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+    except Exception:
+        return sql
+
+    if parsed is None:
+        return sql
+
+    try:
+        normalized = normalize_identifiers(parsed, dialect="bigquery")
+        return normalized.sql(dialect="bigquery")
+    except Exception:
+        return sql
+
+
 def _expand_star(
     sql: str,
     sg_schema: dict[str, dict[str, dict[str, str]]],
@@ -221,6 +257,10 @@ def _expand_star(
     # Assign aliases to anonymous derived tables so qualify_columns
     # can resolve columns through nested subqueries
     _assign_derived_table_aliases(parsed)
+
+    # Normalize identifiers (lowercase columns/aliases, preserve table names)
+    # so they match MappingSchema's normalized column names.
+    parsed = normalize_identifiers(parsed, dialect="bigquery")
 
     try:
         schema_obj = MappingSchema(schema=sg_schema, dialect="bigquery")
