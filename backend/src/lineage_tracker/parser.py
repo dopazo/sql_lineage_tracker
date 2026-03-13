@@ -19,6 +19,7 @@ from collections import defaultdict
 
 import sqlglot
 from sqlglot import exp
+from sqlglot.errors import OptimizeError
 from sqlglot.lineage import lineage
 from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 from sqlglot.optimizer.qualify_columns import qualify_columns
@@ -31,6 +32,12 @@ logger = logging.getLogger(__name__)
 # Regex to detect EXECUTE IMMEDIATE (BigQuery dynamic SQL)
 _DYNAMIC_SQL_RE = re.compile(r"\bEXECUTE\s+IMMEDIATE\b", re.IGNORECASE)
 
+# Regex to extract column name from OptimizeError "Unknown column: xxx" messages
+_UNKNOWN_COL_RE = re.compile(r"Unknown column[:\s]+['\"]?(\w+)['\"]?", re.IGNORECASE)
+
+# Max retries when patching schema for unknown columns
+_MAX_SCHEMA_PATCH_RETRIES = 20
+
 
 def contains_dynamic_sql(sql: str) -> bool:
     """Check if SQL contains dynamic SQL constructs (EXECUTE IMMEDIATE).
@@ -40,6 +47,61 @@ def contains_dynamic_sql(sql: str) -> bool:
     should be flagged as warnings so users can resolve lineage manually.
     """
     return bool(_DYNAMIC_SQL_RE.search(sql))
+
+
+def _extract_unknown_column(error_msg: str) -> str | None:
+    """Extract column name from an OptimizeError 'Unknown column' message."""
+    match = _UNKNOWN_COL_RE.search(error_msg)
+    return match.group(1) if match else None
+
+
+def _add_missing_column_to_schema(
+    col_name: str,
+    sql: str,
+    sg_schema: dict[str, dict[str, dict[str, str]]],
+) -> bool:
+    """Add a missing column to the correct table in the schema.
+
+    Parses the SQL to find qualified column references (e.g., CUAD.q_sg_lider),
+    resolves the table alias to the actual dataset.table, and adds the column
+    with type STRING as a placeholder.
+
+    Mutates sg_schema in place. Returns True if the column was added.
+    """
+    try:
+        parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+    except Exception:
+        return False
+
+    if not parsed:
+        return False
+
+    # Build alias -> (db, table_name) map from all table references
+    alias_map: dict[str, tuple[str, str]] = {}
+    for table in parsed.find_all(exp.Table):
+        tbl_name = table.name
+        db = table.db
+        alias = table.alias or tbl_name
+        if db and tbl_name:
+            alias_map[alias.lower()] = (db, tbl_name)
+
+    col_lower = col_name.lower()
+
+    # Find qualified column references (e.g., cuad.q_sg_lider)
+    for col in parsed.find_all(exp.Column):
+        if col.name.lower() == col_lower and col.table:
+            alias_key = col.table.lower()
+            if alias_key in alias_map:
+                db, tbl = alias_map[alias_key]
+                if db in sg_schema and tbl in sg_schema[db]:
+                    sg_schema[db][tbl][col_lower] = "STRING"
+                    logger.warning(
+                        "Schema patched: added missing column '%s' to %s.%s",
+                        col_name, db, tbl,
+                    )
+                    return True
+
+    return False
 
 
 # SQL aggregate function names
@@ -115,13 +177,41 @@ def parse_view_lineage(
     edge_data: dict[str, dict[str, ColumnMapping]] = defaultdict(dict)
 
     for col in output_cols:
-        try:
-            result = lineage(
-                col, normalized_sql, schema=sg_schema, dialect="bigquery"
-            )
-        except Exception:
-            logger.warning("lineage() failed for %s.%s", view_id, col)
+        result = None
+        already_patched: set[str] = set()
+
+        for _attempt in range(_MAX_SCHEMA_PATCH_RETRIES):
+            try:
+                result = lineage(
+                    col, normalized_sql, schema=sg_schema, dialect="bigquery"
+                )
+                break
+            except OptimizeError as e:
+                error_msg = str(e)
+                if "unknown column" in error_msg.lower():
+                    missing_col = _extract_unknown_column(error_msg)
+                    if (
+                        missing_col
+                        and missing_col not in already_patched
+                        and _add_missing_column_to_schema(
+                            missing_col, normalized_sql, sg_schema
+                        )
+                    ):
+                        already_patched.add(missing_col)
+                        continue
+                logger.warning("lineage() failed for %s.%s: %s", view_id, col, e)
+                _add_unknown_mapping(edge_data, source_tables, col)
+                break
+            except Exception:
+                logger.warning("lineage() failed for %s.%s", view_id, col)
+                _add_unknown_mapping(edge_data, source_tables, col)
+                break
+        else:
+            # Exhausted retries
+            logger.warning("lineage() exhausted retries for %s.%s", view_id, col)
             _add_unknown_mapping(edge_data, source_tables, col)
+
+        if result is None:
             continue
 
         # Collect leaf nodes and all intermediate expressions in the chain
@@ -239,6 +329,12 @@ def _expand_star(
     tables (subqueries in FROM/JOIN without aliases) so that
     qualify_columns can resolve columns through nested subqueries.
 
+    If qualify_columns fails with "Unknown column" (common when views
+    reference columns that no longer exist in source tables), the
+    schema is patched with placeholder columns and the operation is
+    retried. This prevents a single missing column from aborting
+    star expansion for the entire SQL.
+
     Returns the original SQL unchanged if expansion fails or if
     there are no star expressions.
     """
@@ -254,21 +350,48 @@ def _expand_star(
     if not list(parsed.find_all(exp.Star)):
         return sql
 
-    # Assign aliases to anonymous derived tables so qualify_columns
-    # can resolve columns through nested subqueries
-    _assign_derived_table_aliases(parsed)
+    already_patched: set[str] = set()
 
-    # Normalize identifiers (lowercase columns/aliases, preserve table names)
-    # so they match MappingSchema's normalized column names.
-    parsed = normalize_identifiers(parsed, dialect="bigquery")
+    for _attempt in range(_MAX_SCHEMA_PATCH_RETRIES):
+        # Re-parse on each attempt (qualify_columns modifies AST in place)
+        try:
+            parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+        except Exception:
+            return sql
 
-    try:
-        schema_obj = MappingSchema(schema=sg_schema, dialect="bigquery")
-        qualified = qualify_columns(parsed, schema=schema_obj, dialect="bigquery")
-        return qualified.sql(dialect="bigquery")
-    except Exception:
-        logger.debug("Failed to expand SELECT * for SQL: %s...", sql[:80])
-        return sql
+        if parsed is None:
+            return sql
+
+        # Assign aliases to anonymous derived tables so qualify_columns
+        # can resolve columns through nested subqueries
+        _assign_derived_table_aliases(parsed)
+
+        # Normalize identifiers (lowercase columns/aliases, preserve table names)
+        # so they match MappingSchema's normalized column names.
+        parsed = normalize_identifiers(parsed, dialect="bigquery")
+
+        try:
+            schema_obj = MappingSchema(schema=sg_schema, dialect="bigquery")
+            qualified = qualify_columns(parsed, schema=schema_obj, dialect="bigquery")
+            return qualified.sql(dialect="bigquery")
+        except OptimizeError as e:
+            error_msg = str(e)
+            if "unknown column" in error_msg.lower():
+                missing_col = _extract_unknown_column(error_msg)
+                if (
+                    missing_col
+                    and missing_col not in already_patched
+                    and _add_missing_column_to_schema(missing_col, sql, sg_schema)
+                ):
+                    already_patched.add(missing_col)
+                    continue
+            logger.debug("Failed to expand SELECT * for SQL: %s...", sql[:80])
+            return sql
+        except Exception:
+            logger.debug("Failed to expand SELECT * for SQL: %s...", sql[:80])
+            return sql
+
+    return sql
 
 
 def _normalize_derived_tables(sql: str) -> str:
