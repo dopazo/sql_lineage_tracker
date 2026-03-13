@@ -262,9 +262,23 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  // Sync when graph/trace changes
+  // Sync when graph/trace changes, preserving positions of existing nodes
   useEffect(() => {
-    setNodes(initialNodes);
+    setNodes((currentNodes) => {
+      const currentPositions = new Map(
+        currentNodes.map((n) => [n.id, n.position])
+      );
+      // If we only removed nodes (subset), preserve all existing positions
+      const allExist = initialNodes.every((n) => currentPositions.has(n.id));
+      if (allExist && currentNodes.length > 0) {
+        return initialNodes.map((node) => ({
+          ...node,
+          position: currentPositions.get(node.id) ?? node.position,
+        }));
+      }
+      // New nodes appeared — use dagre layout for all
+      return initialNodes;
+    });
     setEdges(initialEdges);
   }, [initialNodes, initialEdges, setNodes, setEdges]);
 
