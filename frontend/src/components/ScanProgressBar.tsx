@@ -4,12 +4,16 @@ interface ScanProgressBarProps {
   messages: string[];
   scanning: boolean;
   error: string | null;
+  completed?: boolean;
+  onDismiss?: () => void;
 }
 
 export function ScanProgressBar({
   messages,
   scanning,
   error,
+  completed,
+  onDismiss,
 }: ScanProgressBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -34,24 +38,59 @@ export function ScanProgressBar({
         </div>
       )}
 
-      <div className="px-4 py-3">
-        {scanning && (
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-[var(--accent-cyan)] animate-pulse-glow" />
-            <span className="text-xs font-medium text-[var(--accent-cyan)] font-[var(--font-mono)] uppercase tracking-wider">
-              Scanning
-            </span>
-          </div>
-        )}
+      {/* Completed accent line */}
+      {completed && !scanning && (
+        <div className="h-0.5 bg-[var(--accent-cyan)]/30" />
+      )}
 
-        {error && (
+      <div className="px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          {scanning && (
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[var(--accent-cyan)] animate-pulse-glow" />
+              <span className="text-xs font-medium text-[var(--accent-cyan)] font-[var(--font-mono)] uppercase tracking-wider">
+                Scanning
+              </span>
+            </div>
+          )}
+
+          {completed && !scanning && (
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="text-xs font-medium text-emerald-400 font-[var(--font-mono)] uppercase tracking-wider">
+                Complete
+              </span>
+            </div>
+          )}
+
+          {error && !scanning && !completed && (
+            <div className="text-sm text-red-400 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-400" />
+              {error}
+            </div>
+          )}
+
+          {!scanning && (messages.length > 0 || error) && onDismiss && (
+            <button
+              onClick={onDismiss}
+              className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors p-0.5 -mr-1"
+              title="Close"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M3 3l8 8M11 3l-8 8" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {error && (completed || scanning) && (
           <div className="text-sm text-red-400 mb-2 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-400" />
             {error}
           </div>
         )}
 
-        <div ref={scrollRef} className="max-h-24 overflow-y-auto space-y-0.5">
+        <div ref={scrollRef} className="max-h-48 overflow-y-auto space-y-0.5">
           {messages.map((msg, i) => (
             <div
               key={i}

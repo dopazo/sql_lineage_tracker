@@ -6,7 +6,7 @@ import type { ScanConfig } from "./types/graph";
 
 export function App() {
   const { graph, appState, error, loadGraph } = useLineageGraph();
-  const { scanning, messages, scanError, runScan } = useScanProgress();
+  const { scanning, messages, scanError, completed, runScan, dismissMessages } = useScanProgress();
 
   const handleStartScan = (config: ScanConfig) => {
     runScan(config, () => {
@@ -53,6 +53,8 @@ export function App() {
         scanning={scanning}
         scanMessages={messages}
         scanError={scanError}
+        scanCompleted={completed}
+        onDismissScan={dismissMessages}
       />
     );
   }

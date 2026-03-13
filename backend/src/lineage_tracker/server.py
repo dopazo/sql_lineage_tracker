@@ -526,6 +526,10 @@ async def _run_scan(
     event_bus.reset()
     logger.info("Starting scan: %s", scan_config_dict)
 
+    import time
+
+    scan_start_time = time.monotonic()
+
     try:
         loop = asyncio.get_event_loop()
 
@@ -562,15 +566,24 @@ async def _run_scan(
 
         print(format_scan_report(graph, scan_result.errors))
 
+        elapsed = time.monotonic() - scan_start_time
+        if elapsed >= 60:
+            minutes = int(elapsed // 60)
+            seconds = int(elapsed % 60)
+            duration_str = f"{minutes}m {seconds}s"
+        else:
+            duration_str = f"{elapsed:.1f}s"
+
         event_bus.publish(
             "complete",
-            f"Scan complete: {len(graph.nodes)} nodes, {len(graph.edges)} edges",
+            f"Scan complete: {len(graph.nodes)} nodes, {len(graph.edges)} edges ({duration_str})",
         )
 
         logger.info(
-            "Scan complete: %d nodes, %d edges",
+            "Scan complete: %d nodes, %d edges (%s)",
             len(graph.nodes),
             len(graph.edges),
+            duration_str,
         )
     except Exception as exc:
         logger.exception("Scan failed")

@@ -8,6 +8,8 @@ interface ScanSetupScreenProps {
   scanning: boolean;
   scanMessages: string[];
   scanError: string | null;
+  scanCompleted?: boolean;
+  onDismissScan?: () => void;
 }
 
 export function ScanSetupScreen({
@@ -15,6 +17,8 @@ export function ScanSetupScreen({
   scanning,
   scanMessages,
   scanError,
+  scanCompleted,
+  onDismissScan,
 }: ScanSetupScreenProps) {
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,6 +156,8 @@ export function ScanSetupScreen({
           messages={scanMessages}
           scanning={scanning}
           error={scanError}
+          completed={scanCompleted}
+          onDismiss={onDismissScan}
         />
 
         {/* Actions */}

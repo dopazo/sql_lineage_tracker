@@ -190,7 +190,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     getHighlightedColumns,
   } = useColumnSearch(filteredGraph);
 
-  const { scanning, messages, scanError, runScan, runExpand } = useScanProgress();
+  const { scanning, messages, scanError, completed, runScan, runExpand, dismissMessages } = useScanProgress();
 
   const [showFilters, setShowFilters] = useState(false);
 
@@ -353,6 +353,8 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         messages={messages}
         scanning={scanning}
         error={scanError}
+        completed={completed}
+        onDismiss={dismissMessages}
       />
 
       <div className="relative z-0 flex flex-1 overflow-hidden">

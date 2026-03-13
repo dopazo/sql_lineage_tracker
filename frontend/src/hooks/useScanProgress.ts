@@ -6,7 +6,9 @@ export function useScanProgress() {
   const [scanning, setScanning] = useState(false);
   const [messages, setMessages] = useState<string[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [completed, setCompleted] = useState(false);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const onCompleteRef = useRef<(() => void) | null>(null);
 
   // Close EventSource on unmount
   useEffect(() => {
@@ -23,11 +25,23 @@ export function useScanProgress() {
     cleanup?.();
   };
 
+  const dismissMessages = useCallback(() => {
+    setMessages([]);
+    setCompleted(false);
+    setScanError(null);
+    // Call the deferred onComplete when user dismisses
+    const cb = onCompleteRef.current;
+    onCompleteRef.current = null;
+    cb?.();
+  }, []);
+
   const runScan = useCallback(
     async (config: ScanConfig, onComplete: () => void) => {
       setScanning(true);
       setMessages([]);
       setScanError(null);
+      setCompleted(false);
+      onCompleteRef.current = onComplete;
 
       try {
         await startScan(config);
@@ -38,7 +52,7 @@ export function useScanProgress() {
 
             if (event.type === "complete") {
               teardown();
-              onComplete();
+              setCompleted(true);
             } else if (event.type === "error") {
               setScanError(event.message);
               teardown();
@@ -64,6 +78,8 @@ export function useScanProgress() {
       setScanning(true);
       setMessages([]);
       setScanError(null);
+      setCompleted(false);
+      onCompleteRef.current = onComplete;
 
       try {
         await expandNode(nodeId);
@@ -74,7 +90,7 @@ export function useScanProgress() {
 
             if (event.type === "complete") {
               teardown();
-              onComplete();
+              setCompleted(true);
             } else if (event.type === "error") {
               setScanError(event.message);
               teardown();
@@ -99,5 +115,5 @@ export function useScanProgress() {
     teardown();
   }, []);
 
-  return { scanning, messages, scanError, runScan, runExpand, cancelScan };
+  return { scanning, messages, scanError, completed, runScan, runExpand, cancelScan, dismissMessages };
 }
