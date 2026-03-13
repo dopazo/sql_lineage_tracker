@@ -47,6 +47,17 @@ function computeNodeDepths(graph: LineageGraph): Map<string, number> {
     if (!depths.has(id)) depths.set(id, 0);
   }
 
+  // Invert depths so the target table (leaf) is depth 0
+  // and source tables have the highest depths.
+  // This way, reducing maxDepth removes the most distant sources first.
+  let maxDepth = 0;
+  for (const d of depths.values()) {
+    if (d > maxDepth) maxDepth = d;
+  }
+  for (const [id, d] of depths) {
+    depths.set(id, maxDepth - d);
+  }
+
   return depths;
 }
 
