@@ -84,8 +84,7 @@ function TableNodeComponent({ data }: NodeProps) {
 
       {/* Header */}
       <div
-        className="flex items-center gap-2.5 px-3.5 py-2.5 cursor-pointer select-none group"
-        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2.5 px-3.5 py-2.5 select-none group"
       >
         <span
           className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${badge.bg} ${badge.text} font-[var(--font-mono)] tracking-wider`}
@@ -112,9 +111,15 @@ function TableNodeComponent({ data }: NodeProps) {
              lineageNode.status === "error" ? "\u2716" : "\u22EF"}
           </span>
         )}
-        <span className="text-[var(--text-muted)] text-xs font-[var(--font-mono)] group-hover:text-[var(--text-secondary)] transition-colors">
+        <button
+          className="text-[var(--text-muted)] text-xs font-[var(--font-mono)] group-hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(!expanded);
+          }}
+        >
           {expanded ? "\u25B2" : "\u25BC"} {lineageNode.columns.length}
-        </span>
+        </button>
       </div>
 
       {/* Columns */}
