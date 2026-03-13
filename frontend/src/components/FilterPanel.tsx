@@ -36,6 +36,10 @@ interface FilterPanelProps {
   onToggleEdgeType: (t: LineageEdge["edge_type"]) => void;
   onSetMaxDepth: (d: number | null) => void;
   onReset: () => void;
+  prunePoints?: Set<string>;
+  hasPrunedNodes?: boolean;
+  onRestorePrune?: (nodeId: string) => void;
+  onClearAllPrunes?: () => void;
 }
 
 function Checkbox({
@@ -93,6 +97,10 @@ export function FilterPanel({
   onToggleEdgeType,
   onSetMaxDepth,
   onReset,
+  prunePoints,
+  hasPrunedNodes,
+  onRestorePrune,
+  onClearAllPrunes,
 }: FilterPanelProps) {
   return (
     <div className="w-56 glass-elevated border-r border-[var(--border-subtle)] overflow-y-auto animate-fade-in shrink-0">
@@ -160,7 +168,7 @@ export function FilterPanel({
 
         {/* Depth filter */}
         {maxGraphDepth > 0 && (
-          <section>
+          <section className="mb-4">
             <h3 className="label-dark mb-1.5">Max depth</h3>
             <div className="space-y-2">
               <input
@@ -187,6 +195,48 @@ export function FilterPanel({
                   {maxGraphDepth}
                 </span>
               </div>
+            </div>
+          </section>
+        )}
+
+        {/* Pruned branches */}
+        {hasPrunedNodes && prunePoints && prunePoints.size > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-1.5">
+              <h3 className="label-dark">Pruned branches</h3>
+              {onClearAllPrunes && (
+                <button
+                  onClick={onClearAllPrunes}
+                  className="text-[10px] text-[var(--accent-cyan)] hover:text-[var(--accent-teal)] transition-colors cursor-pointer"
+                >
+                  Restore all
+                </button>
+              )}
+            </div>
+            <div className="space-y-1">
+              {[...prunePoints].map((nodeId) => {
+                const parts = nodeId.split(".");
+                const displayName = parts.length > 1 ? parts.slice(1).join(".") : nodeId;
+                return (
+                  <div
+                    key={nodeId}
+                    className="flex items-center justify-between gap-1 py-0.5 group"
+                  >
+                    <span className="text-xs text-[var(--text-muted)] truncate" title={nodeId}>
+                      {displayName}
+                    </span>
+                    {onRestorePrune && (
+                      <button
+                        onClick={() => onRestorePrune(nodeId)}
+                        className="text-[10px] text-[var(--text-muted)] hover:text-green-400 transition-colors shrink-0 opacity-0 group-hover:opacity-100 cursor-pointer"
+                        title="Restore this branch"
+                      >
+                        &#x21A9;
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </section>
         )}

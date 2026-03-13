@@ -81,6 +81,34 @@ function getNodeTypes(graph: LineageGraph): LineageNode["type"][] {
 
 const ALL_EDGE_TYPES: ("automatic" | "manual")[] = ["automatic", "manual"];
 
+/** Collect all upstream node IDs from a starting node (exclusive). */
+function collectUpstream(graph: LineageGraph, startNodeId: string): Set<string> {
+  // Build reverse adjacency: target → sources
+  const reverseAdj = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    const sources = reverseAdj.get(edge.target_node) ?? [];
+    sources.push(edge.source_node);
+    reverseAdj.set(edge.target_node, sources);
+  }
+
+  // Also build forward adjacency to check if a node is reachable
+  // from any non-pruned path (we only prune nodes exclusively upstream of startNode)
+  const visited = new Set<string>();
+  const queue = [startNodeId];
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    for (const source of reverseAdj.get(nodeId) ?? []) {
+      if (!visited.has(source)) {
+        visited.add(source);
+        queue.push(source);
+      }
+    }
+  }
+
+  return visited;
+}
+
 export function useGraphFilters(graph: LineageGraph) {
   const datasets = useMemo(() => getDatasets(graph), [graph]);
   const nodeTypes = useMemo(() => getNodeTypes(graph), [graph]);
@@ -100,6 +128,10 @@ export function useGraphFilters(graph: LineageGraph) {
     maxDepth: null,
   });
 
+  // Pruning state: tracks which nodes have been pruned and which nodes are prune points
+  const [prunePoints, setPrunePoints] = useState<Set<string>>(new Set());
+  const [prunedNodes, setPrunedNodes] = useState<Set<string>>(new Set());
+
   // Reset filters when graph changes (new datasets/types may appear)
   useEffect(() => {
     setFilters({
@@ -108,6 +140,8 @@ export function useGraphFilters(graph: LineageGraph) {
       edgeTypes: new Set(ALL_EDGE_TYPES),
       maxDepth: null,
     });
+    setPrunePoints(new Set());
+    setPrunedNodes(new Set());
   }, [datasets, nodeTypes]);
 
   const toggleDataset = useCallback((ds: string) => {
@@ -141,6 +175,37 @@ export function useGraphFilters(graph: LineageGraph) {
     setFilters((prev) => ({ ...prev, maxDepth: d }));
   }, []);
 
+  const pruneUpstream = useCallback((nodeId: string) => {
+    const upstream = collectUpstream(graph, nodeId);
+    setPrunePoints((prev) => new Set([...prev, nodeId]));
+    setPrunedNodes((prev) => new Set([...prev, ...upstream]));
+  }, [graph]);
+
+  const restorePrune = useCallback((nodeId: string) => {
+    // Recompute: remove this prune point and recalculate prunedNodes from remaining prune points
+    setPrunePoints((prev) => {
+      const next = new Set(prev);
+      next.delete(nodeId);
+
+      // Recompute all pruned nodes from remaining prune points
+      const allPruned = new Set<string>();
+      for (const pp of next) {
+        const upstream = collectUpstream(graph, pp);
+        for (const id of upstream) allPruned.add(id);
+      }
+      setPrunedNodes(allPruned);
+
+      return next;
+    });
+  }, [graph]);
+
+  const clearAllPrunes = useCallback(() => {
+    setPrunePoints(new Set());
+    setPrunedNodes(new Set());
+  }, []);
+
+  const hasPrunedNodes = prunedNodes.size > 0;
+
   const resetFilters = useCallback(() => {
     setFilters({
       datasets: new Set(datasets),
@@ -148,13 +213,16 @@ export function useGraphFilters(graph: LineageGraph) {
       edgeTypes: new Set(ALL_EDGE_TYPES),
       maxDepth: null,
     });
+    setPrunePoints(new Set());
+    setPrunedNodes(new Set());
   }, [datasets, nodeTypes]);
 
   const isFiltered =
     filters.datasets.size !== datasets.length ||
     filters.nodeTypes.size !== nodeTypes.length ||
     filters.edgeTypes.size !== ALL_EDGE_TYPES.length ||
-    filters.maxDepth !== null;
+    filters.maxDepth !== null ||
+    hasPrunedNodes;
 
   /** Apply filters to the graph, returning a new filtered graph. */
   const filteredGraph = useMemo((): LineageGraph => {
@@ -170,6 +238,7 @@ export function useGraphFilters(graph: LineageGraph) {
         (nodeDepths.get(id) ?? 0) > filters.maxDepth
       )
         continue;
+      if (prunedNodes.has(id)) continue;
       filteredNodes[id] = node;
     }
 
@@ -199,7 +268,7 @@ export function useGraphFilters(graph: LineageGraph) {
       nodes: filteredNodes,
       edges: filteredEdges,
     };
-  }, [graph, filters, isFiltered, nodeDepths]);
+  }, [graph, filters, isFiltered, nodeDepths, prunedNodes]);
 
   return {
     filters,
@@ -214,5 +283,10 @@ export function useGraphFilters(graph: LineageGraph) {
     toggleEdgeType,
     setMaxDepth,
     resetFilters,
+    pruneUpstream,
+    restorePrune,
+    clearAllPrunes,
+    prunePoints,
+    hasPrunedNodes,
   };
 }
