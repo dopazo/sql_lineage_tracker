@@ -1,5 +1,6 @@
 import type { LineageEdge } from "../types/graph";
 import { TRANSFORM_STYLES } from "../constants/transforms";
+import { SqlHighlight } from "./SqlHighlight";
 
 interface EdgeDetailPanelProps {
   edge: LineageEdge;
@@ -90,9 +91,9 @@ export function EdgeDetailPanel({ edge, onClose, onEdit }: EdgeDetailPanelProps)
                   {mapping.transformation}
                 </span>
                 {mapping.expression && (
-                  <code className="block mt-2 text-[11px] text-[var(--text-secondary)] bg-[var(--bg-surface)] px-2 py-1.5 rounded font-[var(--font-mono)]">
-                    {mapping.expression}
-                  </code>
+                  <div className="mt-2">
+                    <SqlHighlight code={mapping.expression} />
+                  </div>
                 )}
                 {mapping.description && (
                   <div className="mt-1.5 text-[var(--text-muted)]">
