@@ -1,5 +1,7 @@
+import { useState } from "react";
 import type { LineageNode, LineageEdge } from "../types/graph";
 import { SqlHighlight } from "./SqlHighlight";
+import { SqlModal } from "./SqlModal";
 
 interface NodeDetailPanelProps {
   node: LineageNode;
@@ -18,6 +20,17 @@ const STATUS_COLORS: Record<string, string> = {
   truncated: "text-blue-400",
 };
 
+function TruncatedText({ text, className }: { text: string; className?: string }) {
+  return (
+    <span
+      className={`block truncate ${className ?? ""}`}
+      title={text}
+    >
+      {text}
+    </span>
+  );
+}
+
 function EdgeList({ label, edges, dotColor, getLabel }: {
   label: string;
   edges: LineageEdge[];
@@ -34,11 +47,11 @@ function EdgeList({ label, edges, dotColor, getLabel }: {
       ) : (
         <div className="space-y-1">
           {edges.map((e) => (
-            <div key={e.id} className="text-xs text-[var(--text-secondary)] font-[var(--font-mono)] flex items-center gap-1.5">
-              <span className={`w-1 h-1 rounded-full ${dotColor}`} />
-              {getLabel(e)}
+            <div key={e.id} className="text-xs text-[var(--text-secondary)] font-[var(--font-mono)] flex items-center gap-1.5 min-w-0">
+              <span className={`w-1 h-1 rounded-full flex-shrink-0 ${dotColor}`} />
+              <TruncatedText text={getLabel(e)} className="flex-1 min-w-0" />
               {e.edge_type === "manual" && (
-                <span className="text-purple-400 text-[10px]">(manual)</span>
+                <span className="text-purple-400 text-[10px] flex-shrink-0">(manual)</span>
               )}
             </div>
           ))}
@@ -51,6 +64,7 @@ function EdgeList({ label, edges, dotColor, getLabel }: {
 export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream, onExpandNode, expanding }: NodeDetailPanelProps) {
   const upstreamEdges = edges.filter((e) => e.target_node === node.id);
   const downstreamEdges = edges.filter((e) => e.source_node === node.id);
+  const [sqlModalOpen, setSqlModalOpen] = useState(false);
 
   return (
     <div className="w-80 glass-elevated border-l border-[var(--border-subtle)] overflow-y-auto flex flex-col animate-fade-in-right">
@@ -71,9 +85,13 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
         {/* Name */}
         <div>
           <div className="label-dark">Name</div>
-          <div className="text-sm font-medium font-[var(--font-mono)] text-[var(--accent-cyan)]">
-            {node.dataset}.{node.name}
+          <div className="text-xs font-[var(--font-mono)] text-[var(--text-muted)]">
+            {node.dataset}.
           </div>
+          <TruncatedText
+            text={node.name}
+            className="text-sm font-medium font-[var(--font-mono)] text-[var(--accent-cyan)]"
+          />
         </div>
 
         {/* Meta row */}
@@ -139,10 +157,11 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
                       : "bg-amber-400"
                   }`}
                 />
-                <span className="flex-1 font-[var(--font-mono)] text-[var(--text-primary)]">
-                  {col.name}
-                </span>
-                <span className="text-[var(--text-muted)] font-[var(--font-mono)] text-[10px]">
+                <TruncatedText
+                  text={col.name}
+                  className="flex-1 min-w-0 font-[var(--font-mono)] text-[var(--text-primary)]"
+                />
+                <span className="text-[var(--text-muted)] font-[var(--font-mono)] text-[10px] flex-shrink-0">
                   {col.data_type}
                 </span>
               </div>
@@ -189,11 +208,34 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
         {/* SQL */}
         {node.sql && (
           <div>
-            <div className="label-dark">SQL</div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="label-dark !mb-0">SQL</div>
+              <button
+                onClick={() => setSqlModalOpen(true)}
+                className="w-5 h-5 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+                title="Expand SQL"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 1 1 1 1 6" />
+                  <polyline points="10 15 15 15 15 10" />
+                  <line x1="1" y1="1" x2="6" y2="6" />
+                  <line x1="15" y1="15" x2="10" y2="10" />
+                </svg>
+              </button>
+            </div>
             <SqlHighlight code={node.sql} />
           </div>
         )}
       </div>
+
+      {/* SQL Modal */}
+      {sqlModalOpen && node.sql && (
+        <SqlModal
+          code={node.sql}
+          title={`${node.dataset}.${node.name}`}
+          onClose={() => setSqlModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
