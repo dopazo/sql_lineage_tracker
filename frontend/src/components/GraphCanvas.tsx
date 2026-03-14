@@ -248,7 +248,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
       if (
         traceOrigin &&
         traceOrigin.nodeId === nodeId &&
-        traceOrigin.columnName === columnName
+        traceOrigin.columnName.toLowerCase() === columnName.toLowerCase()
       ) {
         clearTrace();
         return;

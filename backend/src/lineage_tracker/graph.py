@@ -120,7 +120,7 @@ def build_graph(
     schemas: dict[str, dict[str, str]] = {}
     for node_id, node in nodes.items():
         if node.columns:
-            schemas[node_id] = {col.name: col.data_type for col in node.columns}
+            schemas[node_id] = {col.name.lower(): col.data_type for col in node.columns}
 
     # Sort views topologically
     progress("build_sort", "Sorting views in topological order...")
@@ -263,7 +263,7 @@ def _mark_column_lineage_status(
                 resolved_cols.add(mapping.target_column)
 
     for col in node.columns:
-        if col.name in resolved_cols:
+        if col.name.lower() in resolved_cols:
             col.lineage_status = "resolved"
         else:
             col.lineage_status = "unknown"

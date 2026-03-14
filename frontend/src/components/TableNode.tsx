@@ -128,7 +128,8 @@ function TableNodeComponent({ data }: NodeProps) {
       {expanded && lineageNode.columns.length > 0 && (
         <div className="border-t border-[var(--border-subtle)] max-h-[300px] overflow-y-auto">
           {lineageNode.columns.map((col) => {
-            const highlighted = highlightedColumns.includes(col.name);
+            const colLower = col.name.toLowerCase();
+            const highlighted = highlightedColumns.some(h => h.toLowerCase() === colLower);
             return (
               <div
                 key={col.name}

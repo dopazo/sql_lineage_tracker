@@ -34,14 +34,17 @@ export function traceColumn(
   startNodeId: string,
   startColumn: string
 ): ColumnTraceEntry[] {
+  // Normalize to lowercase for consistent matching against ColumnMapping
+  // (ColumnMapping uses lowercase for both target_column and source_columns)
+  const normalizedCol = startColumn.toLowerCase();
   const trace: ColumnTraceEntry[] = [
-    { nodeId: startNodeId, columnName: startColumn },
+    { nodeId: startNodeId, columnName: normalizedCol },
   ];
-  const visited = new Set<string>([`${startNodeId}:${startColumn}`]);
+  const visited = new Set<string>([`${startNodeId}:${normalizedCol}`]);
   const { bySource, byTarget } = buildAdjacency(graph.edges);
 
-  traceDirection(bySource, startNodeId, startColumn, "downstream", trace, visited);
-  traceDirection(byTarget, startNodeId, startColumn, "upstream", trace, visited);
+  traceDirection(bySource, startNodeId, normalizedCol, "downstream", trace, visited);
+  traceDirection(byTarget, startNodeId, normalizedCol, "upstream", trace, visited);
 
   return trace;
 }
@@ -64,10 +67,13 @@ function traceDirection(
 
     for (const edge of relevantEdges) {
       for (const mapping of edge.column_mappings) {
+        // Use case-insensitive matching: BigQuery column names are
+        // case-insensitive, and ColumnMapping normalizes to lowercase
+        const currentLower = current.columnName.toLowerCase();
         if (direction === "downstream") {
-          if (mapping.source_columns.includes(current.columnName)) {
+          if (mapping.source_columns.some(sc => sc.toLowerCase() === currentLower)) {
             const nextNodeId = edge.target_node;
-            const nextColumn = mapping.target_column;
+            const nextColumn = mapping.target_column.toLowerCase();
             const key = `${nextNodeId}:${nextColumn}`;
             if (!visited.has(key)) {
               visited.add(key);
@@ -76,14 +82,15 @@ function traceDirection(
             }
           }
         } else {
-          if (mapping.target_column === current.columnName) {
+          if (mapping.target_column.toLowerCase() === currentLower) {
             for (const srcCol of mapping.source_columns) {
               const nextNodeId = edge.source_node;
-              const key = `${nextNodeId}:${srcCol}`;
+              const srcLower = srcCol.toLowerCase();
+              const key = `${nextNodeId}:${srcLower}`;
               if (!visited.has(key)) {
                 visited.add(key);
-                trace.push({ nodeId: nextNodeId, columnName: srcCol });
-                queue.push({ nodeId: nextNodeId, columnName: srcCol });
+                trace.push({ nodeId: nextNodeId, columnName: srcLower });
+                queue.push({ nodeId: nextNodeId, columnName: srcLower });
               }
             }
           }
@@ -186,16 +193,16 @@ export function getTraceEdgeIds(
     if (nodeSet.has(edge.source_node) && nodeSet.has(edge.target_node)) {
       const sourceTraceCols = trace
         .filter((t) => t.nodeId === edge.source_node)
-        .map((t) => t.columnName);
+        .map((t) => t.columnName.toLowerCase());
       const targetTraceCols = trace
         .filter((t) => t.nodeId === edge.target_node)
-        .map((t) => t.columnName);
+        .map((t) => t.columnName.toLowerCase());
 
       for (const mapping of edge.column_mappings) {
         const hasSourceMatch = mapping.source_columns.some((sc) =>
-          sourceTraceCols.includes(sc)
+          sourceTraceCols.includes(sc.toLowerCase())
         );
-        const hasTargetMatch = targetTraceCols.includes(mapping.target_column);
+        const hasTargetMatch = targetTraceCols.includes(mapping.target_column.toLowerCase());
         if (hasSourceMatch && hasTargetMatch) {
           edgeIds.add(edge.id);
           break;

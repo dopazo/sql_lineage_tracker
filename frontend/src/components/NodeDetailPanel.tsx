@@ -320,8 +320,9 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
           </div>
           <div className="bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg max-h-48 overflow-y-auto">
             {node.columns.map((col) => {
-              const isHighlighted = highlightedColumns.includes(col.name);
-              const isActiveOrigin = activeTraceColumn === col.name;
+              const colLower = col.name.toLowerCase();
+              const isHighlighted = highlightedColumns.some(h => h.toLowerCase() === colLower);
+              const isActiveOrigin = activeTraceColumn?.toLowerCase() === colLower;
               return (
                 <div
                   key={col.name}
