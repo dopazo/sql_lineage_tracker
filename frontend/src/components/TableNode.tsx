@@ -24,6 +24,7 @@ interface TableNodeData {
   missingDownstream: boolean;
   onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void;
   onExpandNode?: (nodeId: string) => void;
+  onColumnClick?: (nodeId: string, columnName: string) => void;
   [key: string]: unknown;
 }
 
@@ -36,6 +37,7 @@ function TableNodeComponent({ data }: NodeProps) {
     missingDownstream = false,
     onGapClick,
     onExpandNode,
+    onColumnClick,
   } = data as TableNodeData;
   const [expanded, setExpanded] = useState(false);
   const badge = TYPE_BADGES[lineageNode.type] ?? TYPE_BADGES.table;
@@ -130,7 +132,11 @@ function TableNodeComponent({ data }: NodeProps) {
             return (
               <div
                 key={col.name}
-                className={`flex items-center gap-2 px-3.5 py-1.5 text-xs transition-colors ${
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onColumnClick?.(lineageNode.id, col.name);
+                }}
+                className={`flex items-center gap-2 px-3.5 py-1.5 text-xs transition-colors cursor-pointer ${
                   highlighted
                     ? "bg-cyan-500/10 border-l-2 border-l-[var(--accent-cyan)]"
                     : "hover:bg-[var(--bg-hover)]"

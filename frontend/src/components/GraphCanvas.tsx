@@ -74,7 +74,8 @@ function buildFlowElements(
   traceEdgeIds: Set<string> | null,
   getHighlightedColumns: (nodeId: string) => string[],
   onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void,
-  onExpandNode?: (nodeId: string) => void
+  onExpandNode?: (nodeId: string) => void,
+  onColumnClick?: (nodeId: string, columnName: string) => void
 ): { nodes: Node[]; edges: Edge[] } {
   const hasTrace = traceNodeIds !== null;
 
@@ -99,6 +100,7 @@ function buildFlowElements(
         missingDownstream: !hasOutgoing.has(id),
         onGapClick,
         onExpandNode,
+        onColumnClick,
       },
     })
   );
@@ -236,6 +238,31 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     [runExpand, onGraphReload]
   );
 
+  const handleColumnClick = useCallback(
+    (nodeId: string, columnName: string) => {
+      // Toggle off if clicking the same column that originated the trace
+      if (
+        traceOrigin &&
+        traceOrigin.nodeId === nodeId &&
+        traceOrigin.columnName === columnName
+      ) {
+        clearTrace();
+        return;
+      }
+      // Trace the clicked column
+      const node = filteredGraph.nodes[nodeId];
+      if (node) {
+        selectResult({
+          nodeId,
+          nodeName: `${node.dataset}.${node.name}`,
+          columnName,
+          dataType: node.columns.find((c) => c.name === columnName)?.data_type ?? "",
+        });
+      }
+    },
+    [traceOrigin, clearTrace, selectResult, filteredGraph]
+  );
+
   const { nodes: layoutedNodes, edges: initialEdges } = useMemo(
     () =>
       buildFlowElements(
@@ -244,9 +271,10 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         traceEdgeIds,
         getHighlightedColumns,
         openManualEdgeModal,
-        handleExpandNode
+        handleExpandNode,
+        handleColumnClick
       ),
-    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, openManualEdgeModal, handleExpandNode]
+    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, openManualEdgeModal, handleExpandNode, handleColumnClick]
   );
 
   // Apply user-saved positions on top of dagre layout (separate from layout computation)
@@ -323,31 +351,6 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const onPaneClick = useCallback(() => {
     closeContextMenu();
   }, [closeContextMenu]);
-
-  const handleColumnClick = useCallback(
-    (nodeId: string, columnName: string) => {
-      // Toggle off if clicking the same column that originated the trace
-      if (
-        traceOrigin &&
-        traceOrigin.nodeId === nodeId &&
-        traceOrigin.columnName === columnName
-      ) {
-        clearTrace();
-        return;
-      }
-      // Trace the clicked column
-      const node = filteredGraph.nodes[nodeId];
-      if (node) {
-        selectResult({
-          nodeId,
-          nodeName: `${node.dataset}.${node.name}`,
-          columnName,
-          dataType: node.columns.find((c) => c.name === columnName)?.data_type ?? "",
-        });
-      }
-    },
-    [traceOrigin, clearTrace, selectResult, filteredGraph]
-  );
 
   const handleRescan = useCallback(
     (config: ScanConfig) => {
