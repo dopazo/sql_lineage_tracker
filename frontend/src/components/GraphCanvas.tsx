@@ -318,7 +318,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
       return initialNodes;
     });
     setEdges(initialEdges);
-  }, [initialNodes, initialEdges, setNodes, setEdges, layoutVersion, layoutedNodes]);
+  }, [initialNodes, initialEdges, setNodes, setEdges, layoutVersion]);
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
@@ -370,8 +370,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
 
   const handleDismissScanMessages = useCallback(() => {
     dismissMessages();
-    onGraphReload();
-  }, [dismissMessages, onGraphReload]);
+  }, [dismissMessages]);
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-deep)]">

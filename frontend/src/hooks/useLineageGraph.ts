@@ -23,7 +23,9 @@ export function useLineageGraph() {
         if (!silent) setAppState("setup");
       }
     } catch (err) {
-      if (!silent) {
+      if (silent) {
+        console.warn("Silent graph load failed:", err);
+      } else {
         // If graph endpoint returns error (no graph), show setup
         const health = await getHealth().catch(() => null);
         if (health) {

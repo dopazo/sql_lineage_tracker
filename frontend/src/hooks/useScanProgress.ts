@@ -25,6 +25,12 @@ export function useScanProgress() {
     cleanup?.();
   };
 
+  const triggerOnComplete = useCallback(() => {
+    const cb = onCompleteRef.current;
+    onCompleteRef.current = null;
+    cb?.();
+  }, []);
+
   const dismissMessages = useCallback(() => {
     setMessages([]);
     setCompleted(false);
@@ -49,10 +55,7 @@ export function useScanProgress() {
             if (event.type === "complete") {
               teardown();
               setCompleted(true);
-              // Immediately trigger graph refresh on completion
-              const cb = onCompleteRef.current;
-              onCompleteRef.current = null;
-              cb?.();
+              triggerOnComplete();
             } else if (event.type === "error") {
               setScanError(event.message);
               teardown();
@@ -70,7 +73,7 @@ export function useScanProgress() {
         setScanning(false);
       }
     },
-    []
+    [triggerOnComplete]
   );
 
   const runExpand = useCallback(
@@ -91,10 +94,7 @@ export function useScanProgress() {
             if (event.type === "complete") {
               teardown();
               setCompleted(true);
-              // Immediately trigger graph refresh on completion
-              const cb = onCompleteRef.current;
-              onCompleteRef.current = null;
-              cb?.();
+              triggerOnComplete();
             } else if (event.type === "error") {
               setScanError(event.message);
               teardown();
@@ -112,7 +112,7 @@ export function useScanProgress() {
         setScanning(false);
       }
     },
-    []
+    [triggerOnComplete]
   );
 
   const cancelScan = useCallback(() => {
