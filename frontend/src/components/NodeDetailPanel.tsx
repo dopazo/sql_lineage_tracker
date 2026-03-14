@@ -11,6 +11,9 @@ interface NodeDetailPanelProps {
   onAddDownstream?: (nodeId: string) => void;
   onExpandNode?: (nodeId: string) => void;
   expanding?: boolean;
+  onColumnClick?: (nodeId: string, columnName: string) => void;
+  highlightedColumns?: string[];
+  activeTraceColumn?: string | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -61,7 +64,7 @@ function EdgeList({ label, edges, dotColor, getLabel }: {
   );
 }
 
-export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream, onExpandNode, expanding }: NodeDetailPanelProps) {
+export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream, onExpandNode, expanding, onColumnClick, highlightedColumns = [], activeTraceColumn }: NodeDetailPanelProps) {
   const upstreamEdges = edges.filter((e) => e.target_node === node.id);
   const downstreamEdges = edges.filter((e) => e.source_node === node.id);
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
@@ -145,27 +148,40 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
             Columns ({node.columns.length})
           </div>
           <div className="bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg max-h-48 overflow-y-auto">
-            {node.columns.map((col) => (
-              <div
-                key={col.name}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs border-b border-[var(--border-subtle)] last:border-b-0"
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    col.lineage_status === "resolved"
-                      ? "bg-emerald-400"
-                      : "bg-amber-400"
+            {node.columns.map((col) => {
+              const isHighlighted = highlightedColumns.includes(col.name);
+              const isActiveOrigin = activeTraceColumn === col.name;
+              return (
+                <div
+                  key={col.name}
+                  onClick={() => onColumnClick?.(node.id, col.name)}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-xs border-b border-[var(--border-subtle)] last:border-b-0 transition-colors ${
+                    onColumnClick ? "cursor-pointer hover:bg-[var(--bg-hover)]" : ""
+                  } ${
+                    isActiveOrigin
+                      ? "bg-cyan-500/20 border-l-2 border-l-[var(--accent-cyan)]"
+                      : isHighlighted
+                        ? "bg-cyan-500/10 border-l-2 border-l-[var(--accent-cyan)]/50"
+                        : ""
                   }`}
-                />
-                <TruncatedText
-                  text={col.name}
-                  className="flex-1 min-w-0 font-[var(--font-mono)] text-[var(--text-primary)]"
-                />
-                <span className="text-[var(--text-muted)] font-[var(--font-mono)] text-[10px] flex-shrink-0">
-                  {col.data_type}
-                </span>
-              </div>
-            ))}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                      col.lineage_status === "resolved"
+                        ? "bg-emerald-400"
+                        : "bg-amber-400"
+                    }`}
+                  />
+                  <TruncatedText
+                    text={col.name}
+                    className="flex-1 min-w-0 font-[var(--font-mono)] text-[var(--text-primary)]"
+                  />
+                  <span className="text-[var(--text-muted)] font-[var(--font-mono)] text-[10px] flex-shrink-0">
+                    {col.data_type}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
 

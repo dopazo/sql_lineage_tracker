@@ -188,6 +188,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     traceNodeIds,
     traceEdgeIds,
     getHighlightedColumns,
+    traceOrigin,
   } = useColumnSearch(filteredGraph);
 
   const { scanning, messages, scanError, completed, runScan, runExpand, dismissMessages } = useScanProgress();
@@ -323,6 +324,31 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     closeContextMenu();
   }, [closeContextMenu]);
 
+  const handleColumnClick = useCallback(
+    (nodeId: string, columnName: string) => {
+      // Toggle off if clicking the same column that originated the trace
+      if (
+        traceOrigin &&
+        traceOrigin.nodeId === nodeId &&
+        traceOrigin.columnName === columnName
+      ) {
+        clearTrace();
+        return;
+      }
+      // Trace the clicked column
+      const node = filteredGraph.nodes[nodeId];
+      if (node) {
+        selectResult({
+          nodeId,
+          nodeName: `${node.dataset}.${node.name}`,
+          columnName,
+          dataType: node.columns.find((c) => c.name === columnName)?.data_type ?? "",
+        });
+      }
+    },
+    [traceOrigin, clearTrace, selectResult, filteredGraph]
+  );
+
   const handleRescan = useCallback(
     (config: ScanConfig) => {
       runScan(config, onGraphReload);
@@ -421,6 +447,13 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             }
             onExpandNode={handleExpandNode}
             expanding={scanning}
+            onColumnClick={handleColumnClick}
+            highlightedColumns={getHighlightedColumns(selectedNode.id)}
+            activeTraceColumn={
+              traceOrigin && traceOrigin.nodeId === selectedNode.id
+                ? traceOrigin.columnName
+                : null
+            }
           />
         )}
 

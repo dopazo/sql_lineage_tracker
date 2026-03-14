@@ -17,12 +17,18 @@ export interface SearchResult {
   isTableResult?: boolean;
 }
 
+export interface TraceOrigin {
+  nodeId: string;
+  columnName: string;
+}
+
 export function useColumnSearch(graph: LineageGraph | null) {
   const [query, setQuery] = useState("");
   const [activeTrace, setActiveTrace] = useState<ColumnTraceEntry[] | null>(
     null
   );
   const [isTableTrace, setIsTableTrace] = useState(false);
+  const [traceOrigin, setTraceOrigin] = useState<TraceOrigin | null>(null);
 
   const searchResults = useMemo<SearchResult[]>(() => {
     if (!graph || query.length < 2) return [];
@@ -72,10 +78,12 @@ export function useColumnSearch(graph: LineageGraph | null) {
         const trace = traceTable(graph, result.nodeId);
         setActiveTrace(trace);
         setIsTableTrace(true);
+        setTraceOrigin(null);
       } else {
         const trace = traceColumn(graph, result.nodeId, result.columnName);
         setActiveTrace(trace);
         setIsTableTrace(false);
+        setTraceOrigin({ nodeId: result.nodeId, columnName: result.columnName });
       }
     },
     [graph]
@@ -84,6 +92,7 @@ export function useColumnSearch(graph: LineageGraph | null) {
   const clearTrace = useCallback(() => {
     setActiveTrace(null);
     setIsTableTrace(false);
+    setTraceOrigin(null);
     setQuery("");
   }, []);
 
@@ -125,5 +134,6 @@ export function useColumnSearch(graph: LineageGraph | null) {
     traceNodeIds,
     traceEdgeIds,
     getHighlightedColumns,
+    traceOrigin,
   };
 }
