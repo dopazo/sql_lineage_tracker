@@ -7,6 +7,7 @@ from INFORMATION_SCHEMA for lineage analysis.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from google.cloud import bigquery
@@ -19,12 +20,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class _DatasetCache:
+    """Cached metadata for a single dataset."""
+
+    table_types: dict[str, str] = field(default_factory=dict)
+    view_sqls: dict[str, str] = field(default_factory=dict)
+    columns: dict[str, list[ColumnInfo]] = field(default_factory=dict)
+
+
 class BigQueryExtractor:
     """Extracts metadata from BigQuery INFORMATION_SCHEMA."""
 
     def __init__(self, project_id: str) -> None:
         self.project_id = project_id
         self.client = bigquery.Client(project=project_id)
+        self._cache: dict[str, _DatasetCache] = {}
 
     def list_datasets(self) -> list[DatasetInfo]:
         """List all datasets in the project with table/view counts."""
@@ -95,19 +106,25 @@ class BigQueryExtractor:
         Returns:
             Dict mapping table_name -> list of ColumnInfo.
         """
+        if table_name:
+            # Use cache for single-table lookups
+            self._ensure_cached(dataset_id)
+            cached = self._cache[dataset_id].columns.get(table_name)
+            if cached is not None:
+                return {table_name: cached}
+            return {}
+
+        # Bulk query (used by _ensure_cached and extract_dataset)
         query = f"""
             SELECT table_name, column_name, data_type
             FROM `{self.project_id}.{dataset_id}.INFORMATION_SCHEMA.COLUMNS`
+            ORDER BY table_name, ordinal_position
         """
-        if table_name:
-            query += f"    WHERE table_name = '{table_name}'"
-
-        query += "\n    ORDER BY table_name, ordinal_position"
 
         try:
             rows = self.client.query(query).result()
         except Exception:
-            logger.warning("Failed to get columns for %s.%s", dataset_id, table_name or "*")
+            logger.warning("Failed to get columns for %s.*", dataset_id)
             return {}
 
         columns_by_table: dict[str, list[ColumnInfo]] = {}
@@ -145,39 +162,36 @@ class BigQueryExtractor:
 
         return nodes
 
+    def _ensure_cached(self, dataset_id: str) -> None:
+        """Ensure dataset metadata is cached (tables, views, columns in 3 bulk queries)."""
+        if dataset_id in self._cache:
+            return
+
+        logger.info("Caching metadata for dataset %s (3 bulk queries)", dataset_id)
+        cache = _DatasetCache()
+
+        # 1. Bulk fetch all table types
+        tables = self.list_tables(dataset_id)
+        for t in tables:
+            cache.table_types[t.name] = t.type
+
+        # 2. Bulk fetch all view definitions
+        cache.view_sqls = self.get_view_definitions(dataset_id)
+
+        # 3. Bulk fetch all columns
+        cache.columns = self.get_columns(dataset_id)
+
+        self._cache[dataset_id] = cache
+
     def get_view_sql(self, dataset_id: str, view_name: str) -> str | None:
         """Get the SQL definition of a single view."""
-        query = f"""
-            SELECT view_definition
-            FROM `{self.project_id}.{dataset_id}.INFORMATION_SCHEMA.VIEWS`
-            WHERE table_name = '{view_name}'
-        """
-        try:
-            rows = list(self.client.query(query).result())
-        except Exception:
-            logger.warning("Failed to get SQL for view %s.%s", dataset_id, view_name)
-            return None
-
-        if rows:
-            return rows[0].view_definition
-        return None
+        self._ensure_cached(dataset_id)
+        return self._cache[dataset_id].view_sqls.get(view_name)
 
     def get_table_type(self, dataset_id: str, table_name: str) -> str | None:
         """Get the type of a single table (table, view, materialized)."""
-        query = f"""
-            SELECT table_type
-            FROM `{self.project_id}.{dataset_id}.INFORMATION_SCHEMA.TABLES`
-            WHERE table_name = '{table_name}'
-        """
-        try:
-            rows = list(self.client.query(query).result())
-        except Exception:
-            logger.warning("Failed to get type for %s.%s", dataset_id, table_name)
-            return None
-
-        if rows:
-            return _map_table_type(rows[0].table_type)
-        return None
+        self._ensure_cached(dataset_id)
+        return self._cache[dataset_id].table_types.get(table_name)
 
 
 def _map_table_type(bq_type: str) -> str:

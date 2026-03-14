@@ -11,7 +11,9 @@ Takes nodes from the scanner and builds a complete LineageGraph by:
 from __future__ import annotations
 
 import logging
+import os
 from collections import defaultdict, deque
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from lineage_tracker.models import (
@@ -91,6 +93,20 @@ def topological_sort(nodes: dict[str, LineageNode]) -> list[str]:
     return sorted_ids
 
 
+def _parse_view_task(
+    node_id: str,
+    sql: str,
+    schemas: dict[str, dict[str, str]],
+) -> tuple[str, list[LineageEdge] | None]:
+    """Worker function for parallel view parsing (must be module-level for pickling)."""
+    try:
+        edges = parse_view_lineage(node_id, sql, schemas)
+        return (node_id, edges)
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to parse lineage for %s", node_id)
+        return (node_id, None)
+
+
 def build_graph(
     scan_result: ScanResult,
     config: ScanConfig,
@@ -132,19 +148,16 @@ def build_graph(
     total_views = len(views_to_parse)
     parsed_count = 0
 
-    # Parse lineage for each view in topological order
+    # Pre-filter views: handle dynamic SQL and missing schemas in main thread
     all_edges: list[LineageEdge] = []
     parse_errors = 0
+    parseable_views: list[str] = []
 
     for node_id in sorted_ids:
         node = nodes[node_id]
         if not node.sql:
-            continue  # Base tables have no SQL to parse
+            continue
 
-        parsed_count += 1
-        progress("build_parse", f"Parsing lineage for {node_id} ({parsed_count}/{total_views})")
-
-        # Detect dynamic SQL (EXECUTE IMMEDIATE) — lineage cannot be traced
         if contains_dynamic_sql(node.sql):
             logger.warning(
                 "View %s contains dynamic SQL (EXECUTE IMMEDIATE) — "
@@ -170,32 +183,71 @@ def build_graph(
             parse_errors += 1
             continue
 
-        try:
-            edges = parse_view_lineage(node_id, node.sql, schemas)
-            all_edges.extend(edges)
+        parseable_views.append(node_id)
 
-            # Register parsed view's schema for downstream views to use
-            # (schema already in schemas from columns, but this ensures it's there)
+    total_parseable = len(parseable_views)
+    max_workers = min(os.cpu_count() or 4, 8)
 
-            # Mark columns with unresolved lineage
-            _mark_column_lineage_status(node, edges)
-
-            # Count as parse error if no edges produced for a view with SQL
-            if not edges:
-                parse_errors += 1
+    if total_parseable <= 1 or max_workers <= 1:
+        # Sequential fallback
+        for idx, node_id in enumerate(parseable_views, 1):
+            node = nodes[node_id]
+            progress("build_parse", f"Parsing lineage for {node_id} ({idx}/{total_views})")
+            try:
+                edges = parse_view_lineage(node_id, node.sql, schemas)
+                all_edges.extend(edges)
+                _mark_column_lineage_status(node, edges)
+                if not edges:
+                    parse_errors += 1
+                    if node.status == "ok":
+                        node.status = "warning"
+                        node.status_message = "Lineage could not be resolved"
+            except Exception:
+                logger.exception("Failed to parse lineage for %s", node_id)
                 if node.status == "ok":
                     node.status = "warning"
-                    node.status_message = "Lineage could not be resolved"
+                    node.status_message = "Lineage parsing failed"
+                parse_errors += 1
+                for col in node.columns:
+                    col.lineage_status = "unknown"
+    else:
+        # Parallel parsing with ProcessPoolExecutor
+        logger.info("Parsing %d views in parallel (max_workers=%d)", total_parseable, max_workers)
+        parsed_count = 0
 
-        except Exception:
-            logger.exception("Failed to parse lineage for %s", node_id)
-            if node.status == "ok":
-                node.status = "warning"
-                node.status_message = "Lineage parsing failed"
-            parse_errors += 1
-            # Mark all columns as unknown
-            for col in node.columns:
-                col.lineage_status = "unknown"
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_parse_view_task, nid, nodes[nid].sql, schemas): nid
+                for nid in parseable_views
+            }
+
+            for future in as_completed(futures):
+                node_id = futures[future]
+                node = nodes[node_id]
+                parsed_count += 1
+                progress("build_parse", f"Parsed lineage for {node_id} ({parsed_count}/{total_views})")
+
+                try:
+                    _, edges = future.result()
+                except Exception:
+                    logger.exception("Worker crashed for %s", node_id)
+                    edges = None
+
+                if edges is not None:
+                    all_edges.extend(edges)
+                    _mark_column_lineage_status(node, edges)
+                    if not edges:
+                        parse_errors += 1
+                        if node.status == "ok":
+                            node.status = "warning"
+                            node.status_message = "Lineage could not be resolved"
+                else:
+                    if node.status == "ok":
+                        node.status = "warning"
+                        node.status_message = "Lineage parsing failed"
+                    parse_errors += 1
+                    for col in node.columns:
+                        col.lineage_status = "unknown"
 
     # Preserve manual edges from previous graph
     manual_edges: list[LineageEdge] = []
