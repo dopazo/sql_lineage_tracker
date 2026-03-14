@@ -376,6 +376,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         showFilters={showFilters}
         onToggleFilters={() => setShowFilters((v) => !v)}
         isFiltered={isFiltered}
+        onGraphReload={onGraphReload}
       />
 
       <ScanProgressBar

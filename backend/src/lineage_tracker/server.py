@@ -6,6 +6,7 @@ import asyncio
 import copy
 import json
 import logging
+import re
 import time
 import traceback
 from collections.abc import AsyncGenerator
@@ -20,7 +21,17 @@ from sse_starlette.sse import EventSourceResponse
 
 from lineage_tracker.extractor import BigQueryExtractor
 from lineage_tracker.models import ColumnMapping, LineageEdge, LineageGraph, ScanConfig
-from lineage_tracker.persistence import _edge_to_dict, graph_to_dict, load_graph, save_graph
+from lineage_tracker.persistence import (
+    _edge_to_dict,
+    delete_named_scan,
+    graph_to_dict,
+    list_named_scans,
+    load_graph,
+    load_named_scan,
+    named_scan_exists,
+    save_graph,
+    save_named_scan,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +463,79 @@ def create_app(
                 event_bus.unsubscribe(queue)
 
         return EventSourceResponse(event_generator())
+
+    # --- Named Scans ---
+
+    @app.get("/api/scans")
+    async def list_scans() -> JSONResponse:
+        """List all named scans for the current project."""
+        scans = list_named_scans(data_dir, project_id)
+        return JSONResponse(content=scans)
+
+    @app.post("/api/scans/{scan_name}")
+    async def save_scan(scan_name: str, request: Request) -> JSONResponse:
+        """Save the current graph as a named scan."""
+        graph: LineageGraph | None = app.state.graph
+        if graph is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No graph loaded to save"},
+            )
+
+        # Validate scan name (alphanumeric, hyphens, underscores)
+        if not re.match(r'^[\w\-]+$', scan_name):
+            return JSONResponse(
+                status_code=422,
+                content={"error": "Scan name must contain only letters, numbers, hyphens, and underscores"},
+            )
+
+        body = await request.json() if await request.body() else {}
+        overwrite = body.get("overwrite", False)
+
+        exists = named_scan_exists(data_dir, project_id, scan_name)
+        if exists and not overwrite:
+            return JSONResponse(
+                status_code=409,
+                content={"error": "A scan with this name already exists", "exists": True},
+            )
+
+        path = save_named_scan(graph, data_dir, project_id, scan_name)
+        return JSONResponse(
+            status_code=201 if not exists else 200,
+            content={"status": "saved", "name": scan_name, "path": str(path)},
+        )
+
+    @app.post("/api/scans/{scan_name}/load")
+    async def load_scan(scan_name: str) -> JSONResponse:
+        """Load a named scan, replacing the current graph."""
+        graph = load_named_scan(data_dir, project_id, scan_name)
+        if graph is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Scan '{scan_name}' not found"},
+            )
+
+        app.state.graph = graph
+        # Also persist as the default graph
+        await _save_current_graph_async(app)
+
+        return JSONResponse(content={
+            "status": "loaded",
+            "name": scan_name,
+            "nodes": len(graph.nodes),
+            "edges": len(graph.edges),
+        })
+
+    @app.delete("/api/scans/{scan_name}")
+    async def delete_scan(scan_name: str) -> JSONResponse:
+        """Delete a named scan."""
+        deleted = delete_named_scan(data_dir, project_id, scan_name)
+        if not deleted:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Scan '{scan_name}' not found"},
+            )
+        return JSONResponse(content={"status": "deleted", "name": scan_name})
 
     # Catch-all route for SPA — must be registered AFTER all /api/* routes
     if _frontend_dir:

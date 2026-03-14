@@ -124,6 +124,49 @@ export function expandNode(
   });
 }
 
+// --- Named Scans ---
+
+export interface SavedScanInfo {
+  name: string;
+  target?: string | null;
+  datasets?: string[];
+  depth?: number | null;
+  total_nodes?: number;
+  total_edges?: number;
+  generated_at?: string | null;
+}
+
+export function listScans(): Promise<SavedScanInfo[]> {
+  return fetchJSON("/scans");
+}
+
+export function saveScan(
+  name: string,
+  overwrite: boolean = false
+): Promise<{ status: string; name: string; exists?: boolean }> {
+  return fetchJSON(`/scans/${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ overwrite }),
+  });
+}
+
+export function loadScan(
+  name: string
+): Promise<{ status: string; name: string; nodes: number; edges: number }> {
+  return fetchJSON(`/scans/${encodeURIComponent(name)}/load`, {
+    method: "POST",
+  });
+}
+
+export function deleteScan(
+  name: string
+): Promise<{ status: string; name: string }> {
+  return fetchJSON(`/scans/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+}
+
 export function exportGraphJSON(graph: LineageGraph): void {
   const blob = new Blob([JSON.stringify(graph, null, 2)], {
     type: "application/json",
