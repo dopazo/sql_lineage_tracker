@@ -9,27 +9,31 @@ export function useLineageGraph() {
   const [appState, setAppState] = useState<AppState>("loading");
   const [error, setError] = useState<string | null>(null);
 
-  const loadGraph = useCallback(async () => {
+  const loadGraph = useCallback(async (silent = false) => {
     try {
-      setAppState("loading");
-      setError(null);
+      if (!silent) {
+        setAppState("loading");
+        setError(null);
+      }
       const data = await getGraph();
       if (data && data.nodes && Object.keys(data.nodes).length > 0) {
         setGraph(data);
-        setAppState("graph");
+        if (!silent) setAppState("graph");
       } else {
-        setAppState("setup");
+        if (!silent) setAppState("setup");
       }
     } catch (err) {
-      // If graph endpoint returns error (no graph), show setup
-      const health = await getHealth().catch(() => null);
-      if (health) {
-        setAppState("setup");
-      } else {
-        setError(
-          err instanceof Error ? err.message : "Failed to connect to server"
-        );
-        setAppState("error");
+      if (!silent) {
+        // If graph endpoint returns error (no graph), show setup
+        const health = await getHealth().catch(() => null);
+        if (health) {
+          setAppState("setup");
+        } else {
+          setError(
+            err instanceof Error ? err.message : "Failed to connect to server"
+          );
+          setAppState("error");
+        }
       }
     }
   }, []);

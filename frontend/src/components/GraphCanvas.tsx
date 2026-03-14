@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useCallback, useState } from "react";
+import { useMemo, useEffect, useCallback, useState, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -65,7 +65,7 @@ const rfNodeTypes: NodeTypes = {
 
 interface GraphCanvasProps {
   graph: LineageGraph;
-  onGraphReload: () => void;
+  onGraphReload: (silent?: boolean) => void;
 }
 
 function buildFlowElements(
@@ -143,6 +143,8 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const [savedPositions, setSavedPositions] = useState<
     Record<string, { x: number; y: number }>
   >(() => loadPositions(projectId));
+  const [layoutVersion, setLayoutVersion] = useState(0);
+  const forceLayoutRef = useRef(false);
 
   const handleNodeDragStop = useCallback<OnNodeDrag>(
     (_event, node) => {
@@ -158,6 +160,8 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const handleResetLayout = useCallback(() => {
     localStorage.removeItem(POSITION_KEY_PREFIX + projectId);
     setSavedPositions({});
+    forceLayoutRef.current = true;
+    setLayoutVersion((v) => v + 1);
   }, [projectId]);
 
   const {
@@ -294,6 +298,11 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   // Sync when graph/trace changes, preserving positions of existing nodes
   useEffect(() => {
     setNodes((currentNodes) => {
+      // On layout reset, force dagre positions
+      if (forceLayoutRef.current) {
+        forceLayoutRef.current = false;
+        return layoutedNodes;
+      }
       const currentPositions = new Map(
         currentNodes.map((n) => [n.id, n.position])
       );
@@ -309,7 +318,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
       return initialNodes;
     });
     setEdges(initialEdges);
-  }, [initialNodes, initialEdges, setNodes, setEdges]);
+  }, [initialNodes, initialEdges, setNodes, setEdges, layoutVersion, layoutedNodes]);
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
@@ -354,10 +363,15 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
 
   const handleRescan = useCallback(
     (config: ScanConfig) => {
-      runScan(config, onGraphReload);
+      runScan(config, () => onGraphReload(true));
     },
     [runScan, onGraphReload]
   );
+
+  const handleDismissScanMessages = useCallback(() => {
+    dismissMessages();
+    onGraphReload();
+  }, [dismissMessages, onGraphReload]);
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-deep)]">
@@ -384,7 +398,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         scanning={scanning}
         error={scanError}
         completed={completed}
-        onDismiss={dismissMessages}
+        onDismiss={handleDismissScanMessages}
       />
 
       <div className="relative z-0 flex flex-1 overflow-hidden">

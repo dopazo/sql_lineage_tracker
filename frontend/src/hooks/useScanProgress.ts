@@ -29,10 +29,6 @@ export function useScanProgress() {
     setMessages([]);
     setCompleted(false);
     setScanError(null);
-    // Call the deferred onComplete when user dismisses
-    const cb = onCompleteRef.current;
-    onCompleteRef.current = null;
-    cb?.();
   }, []);
 
   const runScan = useCallback(
@@ -53,6 +49,10 @@ export function useScanProgress() {
             if (event.type === "complete") {
               teardown();
               setCompleted(true);
+              // Immediately trigger graph refresh on completion
+              const cb = onCompleteRef.current;
+              onCompleteRef.current = null;
+              cb?.();
             } else if (event.type === "error") {
               setScanError(event.message);
               teardown();
@@ -91,6 +91,10 @@ export function useScanProgress() {
             if (event.type === "complete") {
               teardown();
               setCompleted(true);
+              // Immediately trigger graph refresh on completion
+              const cb = onCompleteRef.current;
+              onCompleteRef.current = null;
+              cb?.();
             } else if (event.type === "error") {
               setScanError(event.message);
               teardown();

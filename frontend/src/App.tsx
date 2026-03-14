@@ -5,13 +5,22 @@ import { GraphCanvas } from "./components/GraphCanvas";
 import type { ScanConfig } from "./types/graph";
 
 export function App() {
-  const { graph, appState, error, loadGraph } = useLineageGraph();
+  const { graph, appState, setAppState, error, loadGraph } = useLineageGraph();
   const { scanning, messages, scanError, completed, runScan, dismissMessages } = useScanProgress();
 
   const handleStartScan = (config: ScanConfig) => {
     runScan(config, () => {
-      loadGraph();
+      // Load graph data silently (don't change appState yet)
+      loadGraph(true);
     });
+  };
+
+  const handleDismissScan = () => {
+    dismissMessages();
+    // Now transition to graph view if we have data
+    if (graph && Object.keys(graph.nodes).length > 0) {
+      setAppState("graph");
+    }
   };
 
   if (appState === "loading") {
@@ -38,7 +47,7 @@ export function App() {
             Connection Error
           </p>
           <p className="text-sm text-[var(--text-muted)] mb-6">{error}</p>
-          <button onClick={loadGraph} className="btn-primary">
+          <button onClick={() => loadGraph()} className="btn-primary">
             Retry Connection
           </button>
         </div>
@@ -54,7 +63,7 @@ export function App() {
         scanMessages={messages}
         scanError={scanError}
         scanCompleted={completed}
-        onDismissScan={dismissMessages}
+        onDismissScan={handleDismissScan}
       />
     );
   }
@@ -63,9 +72,7 @@ export function App() {
     return (
       <GraphCanvas
         graph={graph}
-        onGraphReload={() => {
-          loadGraph();
-        }}
+        onGraphReload={loadGraph}
       />
     );
   }
