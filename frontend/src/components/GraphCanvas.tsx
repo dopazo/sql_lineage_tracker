@@ -260,7 +260,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
           nodeId,
           nodeName: `${node.dataset}.${node.name}`,
           columnName,
-          dataType: node.columns.find((c) => c.name === columnName)?.data_type ?? "",
+          dataType: node.columns.find((c) => c.name.toLowerCase() === columnName.toLowerCase())?.data_type ?? "",
         });
       }
     },

@@ -166,7 +166,7 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
       const raw: { mapping: ColumnMapping; sourceNode: string }[] = [];
       for (const edge of upstreamEdges) {
         for (const mapping of edge.column_mappings) {
-          if (mapping.target_column === columnName) {
+          if (mapping.target_column.toLowerCase() === columnName.toLowerCase()) {
             raw.push({ mapping, sourceNode: edge.source_node });
           }
         }
