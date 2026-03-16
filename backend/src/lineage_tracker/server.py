@@ -754,14 +754,23 @@ async def _run_expand(
         # Preserve manual edges
         existing_manual_edges = [e for e in graph.edges if e.edge_type == "manual"]
 
-        # Carry over automatic edges for nodes that won't be re-parsed
+        # Nodes to re-parse: new nodes + downstream dependents whose
+        # upstream schemas may have changed (fixes "unknown" lineage after expand)
         new_node_ids = set(scan_result.nodes.keys())
+        dependents_to_reparse = {
+            e.target_node
+            for e in graph.edges
+            if e.edge_type != "manual" and e.source_node in new_node_ids
+        }
+        reparse_ids = new_node_ids | dependents_to_reparse
+
+        # Carry over automatic edges for nodes that won't be re-parsed
         existing_auto_edges = [
             e for e in graph.edges
-            if e.edge_type != "manual" and e.target_node not in new_node_ids
+            if e.edge_type != "manual" and e.target_node not in reparse_ids
         ]
 
-        # Rebuild graph: only parse new/updated nodes, reuse edges for the rest
+        # Rebuild graph: parse new nodes + their dependents, reuse edges for the rest
         new_graph = await loop.run_in_executor(
             None,
             lambda: build_graph(
@@ -770,7 +779,7 @@ async def _run_expand(
                 app.state.project_id,
                 existing_manual_edges,
                 progress=event_bus.publish,
-                only_parse=new_node_ids,
+                only_parse=reparse_ids,
                 existing_edges=existing_auto_edges,
             ),
         )
