@@ -729,7 +729,14 @@ async def _run_expand(
         # Preserve manual edges
         existing_manual_edges = [e for e in graph.edges if e.edge_type == "manual"]
 
-        # Rebuild graph with all nodes (uses original scan config for metadata)
+        # Carry over automatic edges for nodes that won't be re-parsed
+        new_node_ids = set(scan_result.nodes.keys())
+        existing_auto_edges = [
+            e for e in graph.edges
+            if e.edge_type != "manual" and e.target_node not in new_node_ids
+        ]
+
+        # Rebuild graph: only parse new/updated nodes, reuse edges for the rest
         new_graph = await loop.run_in_executor(
             None,
             lambda: build_graph(
@@ -738,6 +745,8 @@ async def _run_expand(
                 app.state.project_id,
                 existing_manual_edges,
                 progress=event_bus.publish,
+                only_parse=new_node_ids,
+                existing_edges=existing_auto_edges,
             ),
         )
 

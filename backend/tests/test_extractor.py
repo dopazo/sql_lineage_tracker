@@ -164,14 +164,38 @@ class TestGetColumns:
         assert len(columns["users"]) == 1
 
     def test_filters_by_table_name(self, extractor, mock_bq_client):
-        mock_query_result = MagicMock()
-        mock_query_result.result.return_value = []
-        mock_bq_client.query.return_value = mock_query_result
+        """get_columns with table_name uses cache to filter."""
+        table_row = MagicMock()
+        table_row.table_name = "orders"
+        table_row.table_type = "BASE TABLE"
 
-        extractor.get_columns("raw_data", table_name="orders")
+        col1 = MagicMock()
+        col1.table_name = "orders"
+        col1.column_name = "order_id"
+        col1.data_type = "STRING"
+        col2 = MagicMock()
+        col2.table_name = "users"
+        col2.column_name = "user_id"
+        col2.data_type = "INT64"
 
-        call_args = mock_bq_client.query.call_args[0][0]
-        assert "WHERE table_name = 'orders'" in call_args
+        def query_side_effect(sql):
+            result = MagicMock()
+            if "INFORMATION_SCHEMA.TABLES" in sql:
+                result.result.return_value = [table_row]
+            elif "INFORMATION_SCHEMA.VIEWS" in sql:
+                result.result.return_value = []
+            elif "INFORMATION_SCHEMA.COLUMNS" in sql:
+                result.result.return_value = [col1, col2]
+            return result
+
+        mock_bq_client.query.side_effect = query_side_effect
+
+        columns = extractor.get_columns("raw_data", table_name="orders")
+
+        assert "orders" in columns
+        assert len(columns["orders"]) == 1
+        assert columns["orders"][0].name == "order_id"
+        assert "users" not in columns
 
     def test_handles_error(self, extractor, mock_bq_client):
         mock_bq_client.query.side_effect = Exception("error")
@@ -234,14 +258,33 @@ class TestExtractDataset:
 
 class TestGetViewSql:
     def test_returns_sql(self, extractor, mock_bq_client):
-        row = MagicMock()
-        row.view_definition = "SELECT 1"
-        mock_query_result = MagicMock()
-        mock_query_result.result.return_value = [row]
-        mock_bq_client.query.return_value = mock_query_result
+        """get_view_sql populates cache via _ensure_cached, then returns from cache."""
+        table_row = MagicMock()
+        table_row.table_name = "my_view"
+        table_row.table_type = "VIEW"
 
-        sql = extractor.get_view_sql("ds", "my_view")
-        assert sql == "SELECT 1"
+        view_row = MagicMock()
+        view_row.table_name = "my_view"
+        view_row.view_definition = "SELECT 1"
+
+        col_row = MagicMock()
+        col_row.table_name = "my_view"
+        col_row.column_name = "col1"
+        col_row.data_type = "INT64"
+
+        def query_side_effect(sql):
+            result = MagicMock()
+            if "INFORMATION_SCHEMA.TABLES" in sql:
+                result.result.return_value = [table_row]
+            elif "INFORMATION_SCHEMA.VIEWS" in sql:
+                result.result.return_value = [view_row]
+            elif "INFORMATION_SCHEMA.COLUMNS" in sql:
+                result.result.return_value = [col_row]
+            return result
+
+        mock_bq_client.query.side_effect = query_side_effect
+
+        assert extractor.get_view_sql("ds", "my_view") == "SELECT 1"
 
     def test_returns_none_for_missing(self, extractor, mock_bq_client):
         mock_query_result = MagicMock()
@@ -257,11 +300,22 @@ class TestGetViewSql:
 
 class TestGetTableType:
     def test_returns_type(self, extractor, mock_bq_client):
-        row = MagicMock()
-        row.table_type = "VIEW"
-        mock_query_result = MagicMock()
-        mock_query_result.result.return_value = [row]
-        mock_bq_client.query.return_value = mock_query_result
+        """get_table_type populates cache via _ensure_cached, then returns from cache."""
+        table_row = MagicMock()
+        table_row.table_name = "my_view"
+        table_row.table_type = "VIEW"
+
+        def query_side_effect(sql):
+            result = MagicMock()
+            if "INFORMATION_SCHEMA.TABLES" in sql:
+                result.result.return_value = [table_row]
+            elif "INFORMATION_SCHEMA.VIEWS" in sql:
+                result.result.return_value = []
+            elif "INFORMATION_SCHEMA.COLUMNS" in sql:
+                result.result.return_value = []
+            return result
+
+        mock_bq_client.query.side_effect = query_side_effect
 
         assert extractor.get_table_type("ds", "my_view") == "view"
 

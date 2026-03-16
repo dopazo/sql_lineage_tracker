@@ -113,6 +113,8 @@ def build_graph(
     project_id: str,
     existing_manual_edges: list[LineageEdge] | None = None,
     progress: ProgressCallback = _NOOP_PROGRESS,
+    only_parse: set[str] | None = None,
+    existing_edges: list[LineageEdge] | None = None,
 ) -> LineageGraph:
     """Build a complete LineageGraph from scan results.
 
@@ -126,6 +128,10 @@ def build_graph(
         config: The scan configuration used.
         project_id: GCP project ID.
         existing_manual_edges: Manual edges to preserve from a previous graph.
+        only_parse: If provided, only parse views in this set. Views not in the
+            set are skipped (their edges should be supplied via existing_edges).
+        existing_edges: Pre-existing automatic edges to carry over for nodes
+            that are not being re-parsed (used with only_parse).
 
     Returns:
         Complete LineageGraph ready for serialization.
@@ -143,20 +149,25 @@ def build_graph(
     sorted_ids = topological_sort(nodes)
     logger.info("Topological order: %d nodes sorted", len(sorted_ids))
 
-    # Count views that will be parsed (have SQL)
-    views_to_parse = [nid for nid in sorted_ids if nodes[nid].sql]
+    # Carry over pre-existing edges for nodes we won't re-parse
+    all_edges: list[LineageEdge] = []
+    if existing_edges:
+        all_edges.extend(existing_edges)
+
+    # Count views that will be parsed (have SQL and pass only_parse filter)
+    views_to_parse = [
+        nid for nid in sorted_ids
+        if nodes[nid].sql and (only_parse is None or nid in only_parse)
+    ]
     total_views = len(views_to_parse)
     parsed_count = 0
 
     # Pre-filter views: handle dynamic SQL and missing schemas in main thread
-    all_edges: list[LineageEdge] = []
     parse_errors = 0
     parseable_views: list[str] = []
 
-    for node_id in sorted_ids:
+    for node_id in views_to_parse:
         node = nodes[node_id]
-        if not node.sql:
-            continue
 
         if contains_dynamic_sql(node.sql):
             logger.warning(
