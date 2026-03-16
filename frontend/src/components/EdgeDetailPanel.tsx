@@ -38,12 +38,14 @@ export function EdgeDetailPanel({ edge, onClose, onEdit }: EdgeDetailPanelProps)
         {/* Connection */}
         <div>
           <div className="label-dark">Connection</div>
-          <div className="text-sm flex items-center gap-2 font-[var(--font-mono)]">
-            <span className="text-[var(--accent-cyan)]">{edge.source_node}</span>
-            <svg width="16" height="10" viewBox="0 0 16 10" className="text-[var(--text-muted)] shrink-0">
-              <path d="M0 5h13M10 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span className="text-[var(--accent-teal)]">{edge.target_node}</span>
+          <div className="text-sm font-[var(--font-mono)] space-y-1">
+            <div className="text-[var(--accent-cyan)] truncate" title={edge.source_node}>{edge.source_node}</div>
+            <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
+              <svg width="12" height="8" viewBox="0 0 16 10" className="shrink-0">
+                <path d="M0 5h13M10 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span className="text-[var(--accent-teal)] truncate" title={edge.target_node}>{edge.target_node}</span>
+            </div>
           </div>
         </div>
 
@@ -71,16 +73,18 @@ export function EdgeDetailPanel({ edge, onClose, onEdit }: EdgeDetailPanelProps)
                 key={i}
                 className="bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg p-3 text-xs"
               >
-                <div className="flex items-center gap-2 mb-2 font-[var(--font-mono)]">
-                  <span className="text-[var(--text-secondary)]">
+                <div className="mb-2 font-[var(--font-mono)] space-y-0.5">
+                  <div className="text-[var(--text-secondary)] truncate" title={mapping.source_columns.join(", ") || "(none)"}>
                     {mapping.source_columns.join(", ") || "(none)"}
-                  </span>
-                  <svg width="12" height="8" viewBox="0 0 16 10" className="text-[var(--text-muted)] shrink-0">
-                    <path d="M0 5h13M10 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                  <span className="font-medium text-[var(--text-primary)]">
-                    {mapping.target_column}
-                  </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <svg width="12" height="8" viewBox="0 0 16 10" className="text-[var(--text-muted)] shrink-0">
+                      <path d="M0 5h13M10 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <span className="font-medium text-[var(--text-primary)] truncate" title={mapping.target_column}>
+                      {mapping.target_column}
+                    </span>
+                  </div>
                 </div>
                 <span
                   className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold font-[var(--font-mono)] uppercase tracking-wider ${
