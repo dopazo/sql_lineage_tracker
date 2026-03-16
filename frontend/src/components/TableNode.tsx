@@ -126,7 +126,10 @@ function TableNodeComponent({ data }: NodeProps) {
 
       {/* Columns */}
       {expanded && lineageNode.columns.length > 0 && (
-        <div className="border-t border-[var(--border-subtle)] max-h-[300px] overflow-y-auto">
+        <div
+          className="border-t border-[var(--border-subtle)] max-h-[300px] overflow-y-auto"
+          onWheelCapture={(e) => e.stopPropagation()}
+        >
           {lineageNode.columns.map((col) => {
             const colLower = col.name.toLowerCase();
             const highlighted = highlightedColumns.some(h => h.toLowerCase() === colLower);
