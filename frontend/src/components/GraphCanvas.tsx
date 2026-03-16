@@ -23,6 +23,7 @@ import { NodeDetailPanel } from "./NodeDetailPanel";
 import { EdgeDetailPanel } from "./EdgeDetailPanel";
 import { ManualEdgeModal } from "./ManualEdgeModal";
 import { NodeContextMenu } from "./NodeContextMenu";
+import { ColumnTraceModal } from "./ColumnTraceModal";
 import { FilterPanel } from "./FilterPanel";
 import { useColumnSearch } from "../hooks/useColumnSearch";
 import { useGraphFilters } from "../hooks/useGraphFilters";
@@ -195,11 +196,13 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     traceEdgeIds,
     getHighlightedColumns,
     traceOrigin,
+    isTableTrace,
   } = useColumnSearch(filteredGraph);
 
   const { scanning, messages, scanError, completed, runScan, runExpand, dismissMessages } = useScanProgress();
 
   const [showFilters, setShowFilters] = useState(false);
+  const [showTraceModal, setShowTraceModal] = useState(false);
 
   const [selectedNode, setSelectedNode] = useState<LineageNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<LineageEdge | null>(null);
@@ -253,9 +256,10 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         clearTrace();
         return;
       }
-      // Trace the clicked column
+      // Trace the clicked column and sync search query
       const node = filteredGraph.nodes[nodeId];
       if (node) {
+        setQuery(columnName);
         selectResult({
           nodeId,
           nodeName: `${node.dataset}.${node.name}`,
@@ -381,7 +385,9 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         searchResults={searchResults}
         onSearchSelect={selectResult}
         hasActiveTrace={activeTrace !== null}
+        hasColumnTrace={activeTrace !== null && !isTableTrace && traceOrigin !== null}
         onClearTrace={clearTrace}
+        onOpenTraceDetail={() => setShowTraceModal(true)}
         onRescan={handleRescan}
         onExport={() => exportGraphJSON(graph)}
         onResetLayout={handleResetLayout}
@@ -500,6 +506,15 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
           editingEdge={manualEdgeModal.editingEdge}
           onClose={() => setManualEdgeModal(null)}
           onSaved={handleManualEdgeSaved}
+        />
+      )}
+
+      {showTraceModal && activeTrace && traceOrigin && !isTableTrace && (
+        <ColumnTraceModal
+          graph={filteredGraph}
+          activeTrace={activeTrace}
+          traceOrigin={traceOrigin}
+          onClose={() => setShowTraceModal(false)}
         />
       )}
 

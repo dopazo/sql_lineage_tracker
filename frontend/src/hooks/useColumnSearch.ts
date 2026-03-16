@@ -135,5 +135,6 @@ export function useColumnSearch(graph: LineageGraph | null) {
     traceEdgeIds,
     getHighlightedColumns,
     traceOrigin,
+    isTableTrace,
   };
 }

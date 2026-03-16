@@ -17,7 +17,9 @@ interface ToolbarProps {
   searchResults: SearchResult[];
   onSearchSelect: (result: SearchResult) => void;
   hasActiveTrace: boolean;
+  hasColumnTrace: boolean;
   onClearTrace: () => void;
+  onOpenTraceDetail?: () => void;
   onRescan: (config: ScanConfig) => void;
   onExport: () => void;
   onResetLayout?: () => void;
@@ -35,7 +37,9 @@ export function Toolbar({
   searchResults,
   onSearchSelect,
   hasActiveTrace,
+  hasColumnTrace,
   onClearTrace,
+  onOpenTraceDetail,
   onRescan,
   onExport,
   onResetLayout,
@@ -228,7 +232,9 @@ export function Toolbar({
         results={searchResults}
         onSelect={onSearchSelect}
         hasActiveTrace={hasActiveTrace}
+        hasColumnTrace={hasColumnTrace}
         onClear={onClearTrace}
+        onOpenTraceDetail={onOpenTraceDetail}
       />
 
       {/* Save Scan */}

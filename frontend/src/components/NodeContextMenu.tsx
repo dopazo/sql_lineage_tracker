@@ -58,13 +58,13 @@ export function NodeContextMenu({
       disabled: !hasUpstreamEdges && !hasDownstreamEdges,
     },
     {
-      label: "Add upstream source",
+      label: "Add source",
       icon: "\u2190",
       action: onAddUpstream,
       separator: true,
     },
     {
-      label: "Add downstream target",
+      label: "Add dependent",
       icon: "\u2192",
       action: onAddDownstream,
     },
@@ -79,7 +79,7 @@ export function NodeContextMenu({
       : []),
     ...(onPruneUpstream
       ? [{
-          label: "Prune upstream",
+          label: "Prune sources",
           icon: "\u2702",
           action: onPruneUpstream,
           separator: true,

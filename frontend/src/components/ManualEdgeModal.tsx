@@ -381,7 +381,7 @@ export function ManualEdgeModal({
                     if (direction === "upstream") setOtherNodeId(v);
                   }}
                   nodes={graph.nodes}
-                  label="Source (upstream)"
+                  label="Source"
                   disabled={direction === "downstream"}
                 />
               </div>
@@ -409,7 +409,7 @@ export function ManualEdgeModal({
                     if (direction === "downstream") setOtherNodeId(v);
                   }}
                   nodes={graph.nodes}
-                  label="Target (downstream)"
+                  label="Target"
                   disabled={direction === "upstream"}
                 />
               </div>

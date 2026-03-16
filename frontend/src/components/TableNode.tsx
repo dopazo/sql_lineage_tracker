@@ -62,7 +62,7 @@ function TableNodeComponent({ data }: NodeProps) {
       {missingUpstream && (
         <button
           className="absolute -left-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 text-[10px] leading-none hover:bg-amber-500/40 hover:scale-110 transition-all cursor-pointer z-10"
-          title="No upstream source — click to add manual edge"
+          title="No source — click to add manual edge"
           onClick={(e) => {
             e.stopPropagation();
             onGapClick?.(lineageNode.id, "upstream");
@@ -74,7 +74,7 @@ function TableNodeComponent({ data }: NodeProps) {
       {missingDownstream && (
         <button
           className="absolute -right-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 text-[10px] leading-none hover:bg-amber-500/40 hover:scale-110 transition-all cursor-pointer z-10"
-          title="No downstream consumer — click to add manual edge"
+          title="No dependents — click to add manual edge"
           onClick={(e) => {
             e.stopPropagation();
             onGapClick?.(lineageNode.id, "downstream");

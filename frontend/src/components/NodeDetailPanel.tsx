@@ -359,18 +359,18 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
           </div>
         </div>
 
-        {/* Connections */}
+        {/* Connections: dependents first, sources below */}
         <EdgeList
-          label="Upstream"
-          edges={upstreamEdges}
-          dotColor="bg-[var(--accent-cyan)]"
-          getLabel={(e) => e.source_node}
-        />
-        <EdgeList
-          label="Downstream"
+          label="Used by"
           edges={downstreamEdges}
           dotColor="bg-[var(--accent-teal)]"
           getLabel={(e) => e.target_node}
+        />
+        <EdgeList
+          label="Sources"
+          edges={upstreamEdges}
+          dotColor="bg-[var(--accent-cyan)]"
+          getLabel={(e) => e.source_node}
         />
 
         {/* Manual Edge Actions */}
@@ -381,7 +381,7 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
                 onClick={() => onAddUpstream(node.id)}
                 className="btn-ghost text-xs flex-1"
               >
-                + Upstream
+                + Source
               </button>
             )}
             {onAddDownstream && (
@@ -389,7 +389,7 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
                 onClick={() => onAddDownstream(node.id)}
                 className="btn-ghost text-xs flex-1"
               >
-                + Downstream
+                + Dependent
               </button>
             )}
           </div>
