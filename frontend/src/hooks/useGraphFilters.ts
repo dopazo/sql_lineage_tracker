@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type {
   LineageGraph,
   LineageNode,
   GraphFilters,
 } from "../types/graph";
+import { updatePrunePoints } from "../api/client";
 
 /** Compute topological depth of each node (distance from root nodes). */
 function computeNodeDepths(graph: LineageGraph): Map<string, number> {
@@ -132,6 +133,19 @@ export function useGraphFilters(graph: LineageGraph) {
   const [prunePoints, setPrunePoints] = useState<Set<string>>(new Set());
   const [prunedNodes, setPrunedNodes] = useState<Set<string>>(new Set());
 
+  // Ref to debounce prune-points sync to backend
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Sync prune points to backend (debounced). */
+  const syncPrunePoints = useCallback((points: Set<string>) => {
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      updatePrunePoints([...points]).catch(() => {
+        // Best-effort: don't block UI on sync failure
+      });
+    }, 300);
+  }, []);
+
   // Reset filters when graph changes (new datasets/types may appear)
   useEffect(() => {
     setFilters({
@@ -140,9 +154,22 @@ export function useGraphFilters(graph: LineageGraph) {
       edgeTypes: new Set(ALL_EDGE_TYPES),
       maxDepth: null,
     });
-    setPrunePoints(new Set());
-    setPrunedNodes(new Set());
-  }, [datasets, nodeTypes]);
+
+    // Restore prune points from persisted graph data
+    const savedPrunePoints = graph.prune_points ?? [];
+    const restoredPrunePoints = new Set(
+      savedPrunePoints.filter((id) => id in graph.nodes)
+    );
+    setPrunePoints(restoredPrunePoints);
+
+    // Recompute pruned nodes from restored prune points
+    const allPruned = new Set<string>();
+    for (const pp of restoredPrunePoints) {
+      const upstream = collectUpstream(graph, pp);
+      for (const id of upstream) allPruned.add(id);
+    }
+    setPrunedNodes(allPruned);
+  }, [datasets, nodeTypes, graph]);
 
   const toggleDataset = useCallback((ds: string) => {
     setFilters((prev) => {
@@ -177,9 +204,13 @@ export function useGraphFilters(graph: LineageGraph) {
 
   const pruneUpstream = useCallback((nodeId: string) => {
     const upstream = collectUpstream(graph, nodeId);
-    setPrunePoints((prev) => new Set([...prev, nodeId]));
+    setPrunePoints((prev) => {
+      const next = new Set([...prev, nodeId]);
+      syncPrunePoints(next);
+      return next;
+    });
     setPrunedNodes((prev) => new Set([...prev, ...upstream]));
-  }, [graph]);
+  }, [graph, syncPrunePoints]);
 
   const restorePrune = useCallback((nodeId: string) => {
     // Recompute: remove this prune point and recalculate prunedNodes from remaining prune points
@@ -195,14 +226,16 @@ export function useGraphFilters(graph: LineageGraph) {
       }
       setPrunedNodes(allPruned);
 
+      syncPrunePoints(next);
       return next;
     });
-  }, [graph]);
+  }, [graph, syncPrunePoints]);
 
   const clearAllPrunes = useCallback(() => {
     setPrunePoints(new Set());
     setPrunedNodes(new Set());
-  }, []);
+    syncPrunePoints(new Set());
+  }, [syncPrunePoints]);
 
   const hasPrunedNodes = prunedNodes.size > 0;
 
@@ -215,7 +248,8 @@ export function useGraphFilters(graph: LineageGraph) {
     });
     setPrunePoints(new Set());
     setPrunedNodes(new Set());
-  }, [datasets, nodeTypes]);
+    syncPrunePoints(new Set());
+  }, [datasets, nodeTypes, syncPrunePoints]);
 
   const isFiltered =
     filters.datasets.size !== datasets.length ||

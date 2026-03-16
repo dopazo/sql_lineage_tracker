@@ -124,6 +124,18 @@ export function expandNode(
   });
 }
 
+// --- Prune Points ---
+
+export function updatePrunePoints(
+  prunePoints: string[]
+): Promise<{ status: string; prune_points: string[] }> {
+  return fetchJSON("/prune-points", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prune_points: prunePoints }),
+  });
+}
+
 // --- Named Scans ---
 
 export interface SavedScanInfo {

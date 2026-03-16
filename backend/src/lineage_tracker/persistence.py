@@ -82,7 +82,7 @@ def load_graph(data_dir: Path, project_id: str) -> LineageGraph | None:
 
 def graph_to_dict(graph: LineageGraph) -> dict:
     """Convert a LineageGraph to a JSON-serializable dict."""
-    return {
+    result = {
         "metadata": _metadata_to_dict(graph.metadata),
         "nodes": {
             node_id: _node_to_dict(node)
@@ -90,6 +90,9 @@ def graph_to_dict(graph: LineageGraph) -> dict:
         },
         "edges": [_edge_to_dict(edge) for edge in graph.edges],
     }
+    if graph.prune_points:
+        result["prune_points"] = graph.prune_points
+    return result
 
 
 def dict_to_graph(data: dict) -> LineageGraph:
@@ -102,7 +105,8 @@ def dict_to_graph(data: dict) -> LineageGraph:
 
     edges = [_dict_to_edge(e) for e in data.get("edges", [])]
 
-    return LineageGraph(metadata=metadata, nodes=nodes, edges=edges)
+    prune_points = data.get("prune_points", [])
+    return LineageGraph(metadata=metadata, nodes=nodes, edges=edges, prune_points=prune_points)
 
 
 # -- Serialization helpers --

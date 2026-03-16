@@ -51,6 +51,7 @@ export interface LineageGraph {
   metadata: GraphMetadata;
   nodes: Record<string, LineageNode>;
   edges: LineageEdge[];
+  prune_points?: string[];
 }
 
 export interface GraphMetadata {

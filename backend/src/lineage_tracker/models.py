@@ -83,6 +83,7 @@ class LineageGraph:
     metadata: GraphMetadata
     nodes: dict[str, LineageNode] = field(default_factory=dict)
     edges: list[LineageEdge] = field(default_factory=list)
+    prune_points: list[str] = field(default_factory=list)
 
 
 @dataclass

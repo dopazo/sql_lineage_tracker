@@ -336,6 +336,31 @@ def create_app(
 
         return JSONResponse(content={"status": "deleted", "id": edge_id})
 
+    # -- Prune Points --
+
+    @app.put("/api/prune-points")
+    async def update_prune_points(request: Request) -> JSONResponse:
+        """Update the list of pruned node IDs. Body: {prune_points: string[]}."""
+        graph: LineageGraph | None = app.state.graph
+        if graph is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "No graph loaded"},
+            )
+
+        body = await request.json()
+        prune_points = body.get("prune_points", [])
+        if not isinstance(prune_points, list):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "prune_points must be a list of node IDs"},
+            )
+
+        graph.prune_points = prune_points
+        await _save_current_graph_async(app)
+
+        return JSONResponse(content={"status": "ok", "prune_points": prune_points})
+
     @app.post("/api/scan")
     async def start_scan(request: Request) -> JSONResponse:
         """Start an async scan. Body: {target?, datasets?, depth?}."""
@@ -749,6 +774,9 @@ async def _run_expand(
                 existing_edges=existing_auto_edges,
             ),
         )
+
+        # Preserve prune points from the previous graph
+        new_graph.prune_points = list(graph.prune_points)
 
         app.state.graph = new_graph
         await _save_current_graph_async(app)
