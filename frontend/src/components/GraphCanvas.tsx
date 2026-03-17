@@ -30,7 +30,7 @@ import { FilterPanel } from "./FilterPanel";
 import { useColumnSearch } from "../hooks/useColumnSearch";
 import { useGraphFilters } from "../hooks/useGraphFilters";
 import { useScanProgress } from "../hooks/useScanProgress";
-import { exportGraphJSON } from "../api/client";
+import { ExportModal } from "./ExportModal";
 import type { ScanConfig } from "../types/graph";
 
 // Position persistence via localStorage
@@ -238,6 +238,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
 
   const [showFilters, setShowFilters] = useState(false);
   const [showTraceModal, setShowTraceModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   const [selectedNode, setSelectedNode] = useState<LineageNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<LineageEdge | null>(null);
@@ -437,7 +438,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         onClearTrace={clearTrace}
         onOpenTraceDetail={() => setShowTraceModal(true)}
         onRescan={handleRescan}
-        onExport={() => exportGraphJSON(graph)}
+        onExport={() => setShowExportModal(true)}
         onResetLayout={handleResetLayout}
         scanning={scanning}
         showFilters={showFilters}
@@ -577,6 +578,14 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
           activeTrace={activeTrace}
           traceOrigin={traceOrigin}
           onClose={() => setShowTraceModal(false)}
+        />
+      )}
+
+      {showExportModal && (
+        <ExportModal
+          fullGraph={graph}
+          filteredGraph={filteredGraph}
+          onClose={() => setShowExportModal(false)}
         />
       )}
 

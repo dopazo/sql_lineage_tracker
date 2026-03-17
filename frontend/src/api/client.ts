@@ -183,10 +183,56 @@ export function exportGraphJSON(graph: LineageGraph): void {
   const blob = new Blob([JSON.stringify(graph, null, 2)], {
     type: "application/json",
   });
+  downloadBlob(blob, `lineage_${graph.metadata.project_id}_${new Date().toISOString().slice(0, 10)}.json`);
+}
+
+export function exportGraphMermaid(
+  graph: LineageGraph,
+  detailed: boolean
+): void {
+  const lines: string[] = ["flowchart LR"];
+
+  // Build node definitions
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    const safeId = sanitizeMermaidId(id);
+    const label = `${node.dataset}.${node.name}`;
+    if (detailed && node.columns.length > 0) {
+      const cols = node.columns.map((c) => c.name).join("<br/>");
+      lines.push(`    ${safeId}["<b>${escapeMermaid(label)}</b><br/>${cols}"]`);
+    } else {
+      lines.push(`    ${safeId}["${escapeMermaid(label)}"]`);
+    }
+  }
+
+  // Build edges
+  for (const edge of graph.edges) {
+    const src = sanitizeMermaidId(edge.source_node);
+    const tgt = sanitizeMermaidId(edge.target_node);
+    if (edge.edge_type === "manual") {
+      lines.push(`    ${src} -.-> ${tgt}`);
+    } else {
+      lines.push(`    ${src} --> ${tgt}`);
+    }
+  }
+
+  const content = lines.join("\n") + "\n";
+  const blob = new Blob([content], { type: "text/plain" });
+  downloadBlob(blob, `lineage_${graph.metadata.project_id}_${new Date().toISOString().slice(0, 10)}.mmd`);
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `lineage_${graph.metadata.project_id}_${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function sanitizeMermaidId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_]/g, "_");
+}
+
+function escapeMermaid(text: string): string {
+  return text.replace(/"/g, "&quot;");
 }
