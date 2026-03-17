@@ -234,6 +234,11 @@ body {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
 
+.node-card.selected {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(34, 211, 238, 0.3);
+}
+
 .node-card.dimmed {
   opacity: 0.2;
 }

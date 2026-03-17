@@ -79,7 +79,8 @@ function buildFlowElements(
   getHighlightedColumns: (nodeId: string) => string[],
   onGapClick?: (nodeId: string, direction: "upstream" | "downstream") => void,
   onExpandNode?: (nodeId: string) => void,
-  onColumnClick?: (nodeId: string, columnName: string) => void
+  onColumnClick?: (nodeId: string, columnName: string) => void,
+  selectedNodeId?: string | null
 ): { nodes: Node[]; edges: Edge[] } {
   const hasTrace = traceNodeIds !== null;
 
@@ -105,6 +106,7 @@ function buildFlowElements(
         onGapClick,
         onExpandNode,
         onColumnClick,
+        selected: id === selectedNodeId,
       },
     })
   );
@@ -318,9 +320,10 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         getHighlightedColumns,
         openManualEdgeModal,
         handleExpandNode,
-        handleColumnClick
+        handleColumnClick,
+        selectedNode?.id
       ),
-    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, openManualEdgeModal, handleExpandNode, handleColumnClick]
+    [filteredGraph, traceNodeIds, traceEdgeIds, getHighlightedColumns, openManualEdgeModal, handleExpandNode, handleColumnClick, selectedNode]
   );
 
   // Apply user-saved positions on top of dagre layout (separate from layout computation)
@@ -398,9 +401,11 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     [filteredGraph]
   );
 
-  // Close context menu on pane click
+  // Close context menu and deselect node/edge on pane click
   const onPaneClick = useCallback(() => {
     closeContextMenu();
+    setSelectedNode(null);
+    setSelectedEdge(null);
   }, [closeContextMenu]);
 
   // Build a short summary of active filters for the toolbar badge

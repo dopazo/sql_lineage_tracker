@@ -38,6 +38,7 @@ function TableNodeComponent({ data }: NodeProps) {
     onGapClick,
     onExpandNode,
     onColumnClick,
+    selected = false,
   } = data as TableNodeData;
   const [expanded, setExpanded] = useState(false);
   const badge = TYPE_BADGES[lineageNode.type] ?? TYPE_BADGES.table;
@@ -46,7 +47,7 @@ function TableNodeComponent({ data }: NodeProps) {
 
   return (
     <div
-      className={`node-card ${isTruncated ? "truncated-pulse" : borderColor} ${dimmed ? "dimmed" : ""}`}
+      className={`node-card ${isTruncated ? "truncated-pulse" : borderColor} ${dimmed ? "dimmed" : ""} ${selected ? "selected" : ""}`}
     >
       <Handle
         type="target"
