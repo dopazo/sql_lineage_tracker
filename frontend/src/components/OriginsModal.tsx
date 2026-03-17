@@ -1,7 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { LineageGraph } from "../types/graph";
-import { findOrigins, type OriginEntry } from "../utils/lineageTraversal";
+import {
+  findOrigins,
+  type OriginEntry,
+  type OriginTargetMapping,
+} from "../utils/lineageTraversal";
+import { TRANSFORM_STYLES } from "../constants/transforms";
 
 interface OriginsModalProps {
   graph: LineageGraph;
@@ -11,6 +16,8 @@ interface OriginsModalProps {
 }
 
 type Tab = "tables" | "columns";
+
+/* ── Copy Button ──────────────────────────────────────────── */
 
 function CopyBtn({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
@@ -43,10 +50,152 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
   );
 }
 
+/* ── Chain Tooltip ─────────────────────────────────────────── */
+
+function ChainTooltip({
+  mapping,
+  style,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  mapping: OriginTargetMapping;
+  style: React.CSSProperties;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  return (
+    <div
+      className="fixed z-[110] w-56 glass-elevated border border-[var(--border-medium)] rounded-lg shadow-xl animate-fade-in select-text"
+      style={style}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div className="p-3 space-y-0">
+        {[...mapping.chain].reverse().map((step, i) => (
+          <div key={i}>
+            {i > 0 && (
+              <div className="flex items-center gap-2 pl-3 py-0.5">
+                <svg
+                  width="8"
+                  height="8"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="var(--text-muted)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M8 2v12M4 10l4 4 4-4" />
+                </svg>
+                {step.transformation && (
+                  <span
+                    className={`px-1.5 py-px rounded text-[9px] font-semibold font-[var(--font-mono)] uppercase tracking-wider leading-tight ${
+                      TRANSFORM_STYLES[step.transformation] ?? TRANSFORM_STYLES.unknown
+                    }`}
+                  >
+                    {step.transformation}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="px-2 py-1">
+              <div className="text-xs font-[var(--font-mono)] text-[var(--text-primary)]">
+                {step.columnDisplay}
+              </div>
+              <div className="text-[10px] font-[var(--font-mono)] text-[var(--text-muted)]">
+                {step.nodeName}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Target Column Badges (right side of each row) ─────────── */
+
+function TargetBadges({
+  mappings,
+}: {
+  mappings: OriginTargetMapping[];
+}) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelDismiss = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const dismiss = useCallback(() => {
+    closeTimerRef.current = setTimeout(() => {
+      setHoveredIdx(null);
+      setTooltipPos(null);
+    }, 150);
+  }, []);
+
+  const handleMouseEnter = useCallback(
+    (idx: number, e: React.MouseEvent<HTMLSpanElement>) => {
+      cancelDismiss();
+      if (openTimerRef.current) clearTimeout(openTimerRef.current);
+      const rect = e.currentTarget.getBoundingClientRect();
+      openTimerRef.current = setTimeout(() => {
+        setHoveredIdx(idx);
+        setTooltipPos({
+          top: rect.bottom + 6,
+          left: Math.min(rect.left, window.innerWidth - 240),
+        });
+      }, 250);
+    },
+    [cancelDismiss]
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+    dismiss();
+  }, [dismiss]);
+
+  return (
+    <>
+      <div className="flex items-center gap-1 flex-wrap justify-end">
+        {mappings.map((m, i) => (
+          <span
+            key={m.targetColumn}
+            onMouseEnter={(e) => handleMouseEnter(i, e)}
+            onMouseLeave={handleMouseLeave}
+            className="px-1.5 py-0.5 rounded text-[10px] font-[var(--font-mono)] bg-[var(--accent-cyan)]/10 text-[var(--accent-cyan)]/80 cursor-default hover:bg-[var(--accent-cyan)]/20 transition-colors"
+          >
+            {m.targetColumn}
+          </span>
+        ))}
+      </div>
+      {hoveredIdx !== null && tooltipPos && mappings[hoveredIdx]?.chain.length > 1 &&
+        createPortal(
+          <ChainTooltip
+            mapping={mappings[hoveredIdx]}
+            style={{ top: tooltipPos.top, left: tooltipPos.left }}
+            onMouseEnter={cancelDismiss}
+            onMouseLeave={dismiss}
+          />,
+          document.body
+        )}
+    </>
+  );
+}
+
+/* ── Tables View ──────────────────────────────────────────── */
+
 function TablesView({
   tables,
 }: {
-  tables: { id: string; dataset: string; tableName: string; columnCount: number }[];
+  tables: { id: string; dataset: string; tableName: string; columnCount: number; targetColumns: string[] }[];
 }) {
   return (
     <div className="space-y-1">
@@ -56,14 +205,10 @@ function TablesView({
           className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] transition-colors"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-teal)] shrink-0" />
-          <div className="flex-1 min-w-0">
-            <span className="text-[11px] text-[var(--text-muted)] font-[var(--font-mono)]">
-              {t.dataset}.
-            </span>
-            <span className="text-sm font-medium font-[var(--font-mono)] text-[var(--text-primary)]">
-              {t.tableName}
-            </span>
-          </div>
+          <span className="flex-1 min-w-0 font-[var(--font-mono)] truncate">
+            <span className="text-[11px] text-[var(--text-muted)]">{t.dataset}.</span>
+            <span className="text-sm font-medium text-[var(--text-primary)]">{t.tableName}</span>
+          </span>
           <span className="text-[10px] text-[var(--text-muted)] font-[var(--font-mono)] tabular-nums shrink-0">
             {t.columnCount} col{t.columnCount !== 1 ? "s" : ""}
           </span>
@@ -72,6 +217,8 @@ function TablesView({
     </div>
   );
 }
+
+/* ── Columns View ─────────────────────────────────────────── */
 
 function ColumnsView({
   grouped,
@@ -83,13 +230,11 @@ function ColumnsView({
       {grouped.map((group) => (
         <div key={group.id}>
           {/* Table header */}
-          <div className="flex items-center gap-2 mb-1.5 px-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-teal)] shrink-0" />
-            <span className="text-[11px] text-[var(--text-muted)] font-[var(--font-mono)]">
-              {group.dataset}.
-            </span>
-            <span className="text-xs font-medium font-[var(--font-mono)] text-[var(--text-secondary)]">
-              {group.tableName}
+          <div className="flex items-center gap-1 mb-1.5 px-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-teal)] shrink-0 mr-1" />
+            <span className="font-[var(--font-mono)]">
+              <span className="text-[11px] text-[var(--text-muted)]">{group.dataset}.</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">{group.tableName}</span>
             </span>
           </div>
           {/* Columns */}
@@ -104,9 +249,10 @@ function ColumnsView({
                 }`}
               >
                 <span className="w-1 h-1 rounded-full bg-[var(--accent-cyan)] shrink-0" />
-                <span className="font-[var(--font-mono)] text-[var(--text-primary)]">
+                <span className="font-[var(--font-mono)] text-[var(--text-primary)] flex-1 min-w-0 truncate">
                   {col.columnDisplay}
                 </span>
+                <TargetBadges mappings={col.targetMappings} />
               </div>
             ))}
           </div>
@@ -115,6 +261,8 @@ function ColumnsView({
     </div>
   );
 }
+
+/* ── Main Modal ───────────────────────────────────────────── */
 
 export function OriginsModal({
   graph,
@@ -130,25 +278,35 @@ export function OriginsModal({
   const { tables, grouped } = useMemo(() => {
     const tableMap = new Map<
       string,
-      { id: string; dataset: string; tableName: string; columns: OriginEntry[] }
+      { id: string; dataset: string; tableName: string; columns: OriginEntry[]; targetColumns: Set<string> }
     >();
 
     for (const o of origins) {
       const key = `${o.dataset}.${o.tableName}`;
       let entry = tableMap.get(key);
       if (!entry) {
-        entry = { id: key, dataset: o.dataset, tableName: o.tableName, columns: [] };
+        entry = { id: key, dataset: o.dataset, tableName: o.tableName, columns: [], targetColumns: new Set() };
         tableMap.set(key, entry);
       }
       entry.columns.push(o);
+      for (const tm of o.targetMappings) {
+        entry.targetColumns.add(tm.targetColumn);
+      }
     }
 
-    const grouped = [...tableMap.values()];
-    const tables = grouped.map((g) => ({
+    const grouped = [...tableMap.values()].map((g) => ({
+      id: g.id,
+      dataset: g.dataset,
+      tableName: g.tableName,
+      columns: g.columns,
+    }));
+
+    const tables = [...tableMap.values()].map((g) => ({
       id: g.id,
       dataset: g.dataset,
       tableName: g.tableName,
       columnCount: g.columns.length,
+      targetColumns: [...g.targetColumns],
     }));
 
     return { tables, grouped };

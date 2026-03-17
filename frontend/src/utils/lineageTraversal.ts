@@ -164,7 +164,20 @@ export function traceTable(
  * Find all root origin tables and columns for a given node.
  * Traces every column backward through the graph until reaching
  * nodes/columns with no further upstream mappings (the true origins).
+ * Also records the transformation chain from origin to target.
  */
+export interface OriginChainStep {
+  columnDisplay: string;
+  nodeName: string; // dataset.table
+  /** Transformation applied to reach the NEXT step (downstream). Null for the last step. */
+  transformation: string | null;
+}
+
+export interface OriginTargetMapping {
+  targetColumn: string;
+  chain: OriginChainStep[]; // origin → ... → target
+}
+
 export interface OriginEntry {
   nodeId: string;
   dataset: string;
@@ -172,6 +185,8 @@ export interface OriginEntry {
   columnName: string;
   /** Original-case display name */
   columnDisplay: string;
+  /** Which target columns this origin feeds, with transformation chains */
+  targetMappings: OriginTargetMapping[];
 }
 
 export function findOrigins(
@@ -179,70 +194,108 @@ export function findOrigins(
   startNodeId: string
 ): OriginEntry[] {
   const { byTarget } = buildAdjacency(graph.edges);
-  const origins: OriginEntry[] = [];
-  const originKeys = new Set<string>();
-
-  // For each column in the start node, BFS upstream
   const startNode = graph.nodes[startNodeId];
-  if (!startNode) return origins;
+  if (!startNode) return [];
 
-  // Track visited to avoid cycles
-  const visited = new Set<string>();
+  const originMap = new Map<string, OriginEntry>();
 
-  // Seed queue with all columns of the start node
-  const queue: Array<{ nodeId: string; columnName: string }> = [];
-  for (const col of startNode.columns) {
-    const key = `${startNodeId}:${col.name.toLowerCase()}`;
-    visited.add(key);
-    queue.push({ nodeId: startNodeId, columnName: col.name.toLowerCase() });
-  }
+  // For each target column, BFS upstream tracking parent pointers
+  for (const targetCol of startNode.columns) {
+    const targetColLower = targetCol.name.toLowerCase();
+    const startKey = `${startNodeId}:${targetColLower}`;
 
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const incomingEdges = byTarget.get(current.nodeId) ?? [];
+    const visited = new Set<string>([startKey]);
+    type ParentInfo = { parentKey: string | null; columnDisplay: string; nodeName: string; transformation: string | null };
+    const parent = new Map<string, ParentInfo>();
+    parent.set(startKey, {
+      parentKey: null,
+      columnDisplay: targetCol.name,
+      nodeName: `${startNode.dataset}.${startNode.name}`,
+      transformation: null,
+    });
 
-    // Find mappings that feed this column
-    let hasUpstream = false;
-    for (const edge of incomingEdges) {
-      for (const mapping of edge.column_mappings) {
-        if (mapping.target_column.toLowerCase() !== current.columnName) continue;
+    const queue: Array<{ nodeId: string; columnName: string }> = [
+      { nodeId: startNodeId, columnName: targetColLower },
+    ];
 
-        for (const srcCol of mapping.source_columns) {
-          if (srcCol === "*") continue; // skip wildcard
-          const srcLower = srcCol.toLowerCase();
-          const key = `${edge.source_node}:${srcLower}`;
-          hasUpstream = true;
-          if (!visited.has(key)) {
-            visited.add(key);
-            queue.push({ nodeId: edge.source_node, columnName: srcLower });
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentKey = `${current.nodeId}:${current.columnName}`;
+      const incomingEdges = byTarget.get(current.nodeId) ?? [];
+
+      let hasUpstream = false;
+      for (const edge of incomingEdges) {
+        for (const mapping of edge.column_mappings) {
+          if (mapping.target_column.toLowerCase() !== current.columnName) continue;
+
+          for (const srcCol of mapping.source_columns) {
+            if (srcCol === "*") continue;
+            const srcLower = srcCol.toLowerCase();
+            const key = `${edge.source_node}:${srcLower}`;
+            hasUpstream = true;
+            if (!visited.has(key)) {
+              visited.add(key);
+              const srcNode = graph.nodes[edge.source_node];
+              const srcColObj = srcNode?.columns.find(
+                (c) => c.name.toLowerCase() === srcLower
+              );
+              parent.set(key, {
+                parentKey: currentKey,
+                columnDisplay: srcColObj?.name ?? srcCol,
+                nodeName: srcNode
+                  ? `${srcNode.dataset}.${srcNode.name}`
+                  : edge.source_node,
+                transformation: mapping.transformation,
+              });
+              queue.push({ nodeId: edge.source_node, columnName: srcLower });
+            }
           }
         }
       }
-    }
 
-    // If this column has no upstream sources AND it's not the start node, it's an origin
-    if (!hasUpstream && current.nodeId !== startNodeId) {
-      const oKey = `${current.nodeId}:${current.columnName}`;
-      if (!originKeys.has(oKey)) {
-        originKeys.add(oKey);
+      // Origin found: no upstream and not the start node
+      if (!hasUpstream && current.nodeId !== startNodeId) {
         const node = graph.nodes[current.nodeId];
-        if (node) {
+        if (!node) continue;
+
+        // Reconstruct chain from origin → target
+        const chain: OriginChainStep[] = [];
+        let k: string | null = currentKey;
+        while (k) {
+          const p = parent.get(k);
+          if (p) {
+            chain.push({ columnDisplay: p.columnDisplay, nodeName: p.nodeName, transformation: p.transformation });
+            k = p.parentKey;
+          } else {
+            break;
+          }
+        }
+
+        const oKey = `${current.nodeId}:${current.columnName}`;
+        let entry = originMap.get(oKey);
+        if (!entry) {
           const col = node.columns.find(
             (c) => c.name.toLowerCase() === current.columnName
           );
-          origins.push({
+          entry = {
             nodeId: current.nodeId,
             dataset: node.dataset,
             tableName: node.name,
             columnName: current.columnName,
             columnDisplay: col?.name ?? current.columnName,
-          });
+            targetMappings: [],
+          };
+          originMap.set(oKey, entry);
+        }
+
+        if (!entry.targetMappings.some((tm) => tm.targetColumn === targetCol.name)) {
+          entry.targetMappings.push({ targetColumn: targetCol.name, chain });
         }
       }
     }
   }
 
-  // Sort by dataset.table.column
+  const origins = [...originMap.values()];
   origins.sort((a, b) => {
     const ta = `${a.dataset}.${a.tableName}`;
     const tb = `${b.dataset}.${b.tableName}`;
