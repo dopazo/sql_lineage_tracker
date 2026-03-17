@@ -27,6 +27,7 @@ interface ToolbarProps {
   showFilters?: boolean;
   onToggleFilters?: () => void;
   isFiltered?: boolean;
+  filterSummary?: string;
   onGraphReload?: () => void;
 }
 
@@ -47,6 +48,7 @@ export function Toolbar({
   showFilters,
   onToggleFilters,
   isFiltered,
+  filterSummary,
   onGraphReload,
 }: ToolbarProps) {
   const [showRescan, setShowRescan] = useState(false);
@@ -216,6 +218,11 @@ export function Toolbar({
               <path d="M1 3h14M3 8h10M5.5 13h5" strokeLinecap="round" />
             </svg>
             Filters
+            {isFiltered && !showFilters && filterSummary && (
+              <span className="text-[10px] font-[var(--font-mono)] text-[var(--accent-cyan)] font-normal opacity-80">
+                {filterSummary}
+              </span>
+            )}
           </span>
           {isFiltered && (
             <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[var(--accent-cyan)]" />

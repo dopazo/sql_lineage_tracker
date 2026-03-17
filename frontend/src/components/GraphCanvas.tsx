@@ -173,12 +173,15 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     isFiltered,
     datasets,
     nodeTypes: availableNodeTypes,
+    nodeStatuses: availableStatuses,
     edgeTypes: availableEdgeTypes,
     maxGraphDepth,
     toggleDataset,
     toggleNodeType,
     toggleEdgeType,
+    toggleStatus,
     setMaxDepth,
+    setNameFilter,
     resetFilters,
     pruneUpstream,
     restorePrune,
@@ -397,6 +400,22 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     closeContextMenu();
   }, [closeContextMenu]);
 
+  // Build a short summary of active filters for the toolbar badge
+  const filterSummary = useMemo(() => {
+    if (!isFiltered) return "";
+    const parts: string[] = [];
+    const dsHidden = datasets.length - filters.datasets.size;
+    if (dsHidden > 0) parts.push(`${filters.datasets.size}/${datasets.length} datasets`);
+    const ntHidden = availableNodeTypes.length - filters.nodeTypes.size;
+    if (ntHidden > 0) parts.push(`${filters.nodeTypes.size} types`);
+    const stHidden = availableStatuses.length - filters.statuses.size;
+    if (stHidden > 0) parts.push(`${filters.statuses.size} statuses`);
+    if (filters.nameFilter) parts.push(`"${filters.nameFilter}"`);
+    if (filters.maxDepth !== null) parts.push(`depth ${filters.maxDepth}`);
+    if (hasPrunedNodes) parts.push("pruned");
+    return parts.join(", ");
+  }, [isFiltered, filters, datasets, availableNodeTypes, availableStatuses, hasPrunedNodes]);
+
   const handleRescan = useCallback(
     (config: ScanConfig) => {
       runScan(config, () => onGraphReload(true));
@@ -424,6 +443,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         showFilters={showFilters}
         onToggleFilters={() => setShowFilters((v) => !v)}
         isFiltered={isFiltered}
+        filterSummary={filterSummary}
         onGraphReload={onGraphReload}
       />
 
@@ -450,13 +470,16 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             filters={filters}
             datasets={datasets}
             nodeTypes={availableNodeTypes}
+            nodeStatuses={availableStatuses}
             edgeTypes={availableEdgeTypes}
             maxGraphDepth={maxGraphDepth}
             isFiltered={isFiltered}
             onToggleDataset={toggleDataset}
             onToggleNodeType={toggleNodeType}
             onToggleEdgeType={toggleEdgeType}
+            onToggleStatus={toggleStatus}
             onSetMaxDepth={setMaxDepth}
+            onSetNameFilter={setNameFilter}
             onReset={resetFilters}
             prunePoints={prunePoints}
             hasPrunedNodes={hasPrunedNodes}

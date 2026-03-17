@@ -329,11 +329,19 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
 
         {/* Columns */}
         <div>
-          <div className="label-dark">
-            Columns{" "}
-            ({columnFilter && filteredColumns.length !== node.columns.length
-              ? `${filteredColumns.length}/`
-              : ""}{node.columns.length})
+          <div className="label-dark flex items-center gap-1.5">
+            <span>
+              Columns{" "}
+              ({columnFilter && filteredColumns.length !== node.columns.length
+                ? `${filteredColumns.length}/`
+                : ""}{node.columns.length})
+            </span>
+            <span
+              className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-[var(--border-medium)] text-[8px] text-[var(--text-muted)] cursor-help normal-case tracking-normal"
+              title="● Green = lineage resolved (sources traced)&#10;● Amber = lineage unknown (sources not found)"
+            >
+              ?
+            </span>
           </div>
           {node.columns.length > 8 && (
             <input

@@ -76,6 +76,17 @@ export function ScanSetupScreen({
     });
   };
 
+  // Detect if target's dataset is not in the selected datasets
+  const targetDatasetMissing = useMemo(() => {
+    if (!target || !target.includes(".")) return null;
+    const targetDs = target.split(".")[0].trim();
+    if (!targetDs) return null;
+    const allDatasetIds = datasets.map((ds) => ds.id);
+    if (!allDatasetIds.includes(targetDs)) return null; // dataset doesn't exist at all, not our warning
+    if (selectedDatasets.has(targetDs)) return null;
+    return targetDs;
+  }, [target, datasets, selectedDatasets]);
+
   const handleScan = () => {
     onStartScan({
       target: target || null,
@@ -120,6 +131,14 @@ export function ScanSetupScreen({
             Trace lineage backward from this target. Leave empty to scan all
             selected datasets.
           </p>
+          {targetDatasetMissing && (
+            <div className="flex items-start gap-2 mt-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <span className="text-amber-400 text-xs mt-px shrink-0">&#x26A0;</span>
+              <p className="text-xs text-amber-400">
+                Dataset <span className="font-[var(--font-mono)] font-medium">{targetDatasetMissing}</span> is not selected below. Lineage for this target may be incomplete.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Datasets */}

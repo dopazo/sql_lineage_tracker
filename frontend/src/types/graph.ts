@@ -102,7 +102,9 @@ export interface GraphFilters {
   datasets: Set<string>;
   nodeTypes: Set<LineageNode["type"]>;
   edgeTypes: Set<LineageEdge["edge_type"]>;
+  statuses: Set<LineageNode["status"]>;
   maxDepth: number | null; // null = no limit
+  nameFilter: string;
 }
 
 export interface HealthStatus {
