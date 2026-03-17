@@ -8,6 +8,7 @@ import {
   getTraceEdgeIdsForTable,
   type ColumnTraceEntry,
 } from "../utils/lineageTraversal";
+import { fuzzyMatch } from "../utils/fuzzySearch";
 
 export interface SearchResult {
   nodeId: string;
@@ -15,6 +16,9 @@ export interface SearchResult {
   columnName: string;
   dataType: string;
   isTableResult?: boolean;
+  matchScore?: number;
+  /** Matched character indices in nodeName (for table results) or columnName (for column results) */
+  matchIndices?: number[];
 }
 
 export interface TraceOrigin {
@@ -33,39 +37,56 @@ export function useColumnSearch(graph: LineageGraph | null) {
   const searchResults = useMemo<SearchResult[]>(() => {
     if (!graph || query.length < 2) return [];
 
-    const lowerQuery = query.toLowerCase();
     const tableResults: SearchResult[] = [];
     const columnResults: SearchResult[] = [];
 
     for (const [nodeId, node] of Object.entries(graph.nodes)) {
       const fullName = `${node.dataset}.${node.name}`;
 
-      // Match table/view name
-      if (
-        node.name.toLowerCase().includes(lowerQuery) ||
-        fullName.toLowerCase().includes(lowerQuery)
-      ) {
+      // Fuzzy match table/view name — pick the higher-scoring match
+      const nameMatch = fuzzyMatch(query, node.name);
+      const fullMatch = fuzzyMatch(query, fullName);
+      let bestTableMatch = nameMatch;
+      if (fullMatch && (!nameMatch || fullMatch.score > nameMatch.score)) {
+        bestTableMatch = fullMatch;
+      }
+
+      if (bestTableMatch) {
+        // If matched on short name, offset indices to full name
+        const indices =
+          bestTableMatch === nameMatch
+            ? bestTableMatch.indices.map((i) => i + node.dataset.length + 1)
+            : bestTableMatch.indices;
         tableResults.push({
           nodeId,
           nodeName: fullName,
           columnName: "",
           dataType: node.type,
           isTableResult: true,
+          matchScore: bestTableMatch.score,
+          matchIndices: indices,
         });
       }
 
-      // Match column names
+      // Fuzzy match column names
       for (const col of node.columns) {
-        if (col.name.toLowerCase().includes(lowerQuery)) {
+        const colMatch = fuzzyMatch(query, col.name);
+        if (colMatch) {
           columnResults.push({
             nodeId,
             nodeName: fullName,
             columnName: col.name,
             dataType: col.data_type,
+            matchScore: colMatch.score,
+            matchIndices: colMatch.indices,
           });
         }
       }
     }
+
+    // Sort each group by score descending
+    tableResults.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+    columnResults.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
 
     // Tables first, then columns, capped at 50
     return [...tableResults, ...columnResults].slice(0, 50);

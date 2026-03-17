@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { DatasetInfo, ScanConfig } from "../types/graph";
 import { getDatasets } from "../api/client";
 import { ScanProgressBar } from "./ScanProgressBar";
@@ -29,6 +29,7 @@ export function ScanSetupScreen({
   );
   const [target, setTarget] = useState("");
   const [depth, setDepth] = useState("");
+  const [datasetFilter, setDatasetFilter] = useState("");
 
   useEffect(() => {
     getDatasets()
@@ -47,6 +48,30 @@ export function ScanSetupScreen({
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredDatasets = useMemo(() => {
+    if (!datasetFilter) return datasets;
+    const lower = datasetFilter.toLowerCase();
+    return datasets.filter((ds) => ds.id.toLowerCase().includes(lower));
+  }, [datasets, datasetFilter]);
+
+  const selectAll = () => {
+    const ids = filteredDatasets.map((ds) => ds.id);
+    setSelectedDatasets((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  };
+
+  const deselectAll = () => {
+    const ids = new Set(filteredDatasets.map((ds) => ds.id));
+    setSelectedDatasets((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
       return next;
     });
   };
@@ -99,7 +124,35 @@ export function ScanSetupScreen({
 
         {/* Datasets */}
         <div className="mb-5">
-          <label className="label-dark">Datasets</label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="label-dark !mb-0">
+              Datasets
+              {selectedDatasets.size > 0 && (
+                <span className="ml-1.5 text-[var(--accent-cyan)]">
+                  ({selectedDatasets.size})
+                </span>
+              )}
+            </label>
+            {datasets.length > 0 && (
+              <div className="flex items-center gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={selectAll}
+                  className="text-[var(--text-secondary)] hover:text-[var(--accent-cyan)] transition-colors"
+                >
+                  Select all
+                </button>
+                <span className="text-[var(--border-medium)]">|</span>
+                <button
+                  type="button"
+                  onClick={deselectAll}
+                  className="text-[var(--text-secondary)] hover:text-[var(--accent-cyan)] transition-colors"
+                >
+                  Deselect all
+                </button>
+              </div>
+            )}
+          </div>
           {loading ? (
             <div className="text-sm text-[var(--text-muted)] py-6 text-center">
               <div className="w-4 h-4 border-2 border-[var(--accent-cyan)] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
@@ -114,27 +167,44 @@ export function ScanSetupScreen({
               No datasets found.
             </div>
           ) : (
-            <div className="bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg max-h-52 overflow-y-auto">
-              {datasets.map((ds) => (
-                <label
-                  key={ds.id}
-                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-hover)] cursor-pointer transition-colors border-b border-[var(--border-subtle)] last:border-b-0"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedDatasets.has(ds.id)}
-                    onChange={() => toggleDataset(ds.id)}
-                    className="rounded accent-[var(--accent-cyan)]"
-                  />
-                  <span className="text-sm text-[var(--text-primary)] flex-1 font-[var(--font-mono)]">
-                    {ds.id}
-                  </span>
-                  <span className="text-xs text-[var(--text-muted)] font-[var(--font-mono)]">
-                    {ds.table_count}T / {ds.view_count}V
-                  </span>
-                </label>
-              ))}
-            </div>
+            <>
+              {datasets.length > 10 && (
+                <input
+                  type="text"
+                  placeholder="Filter datasets..."
+                  value={datasetFilter}
+                  onChange={(e) => setDatasetFilter(e.target.value)}
+                  className="input-dark w-full text-xs !py-1.5 !px-2.5 !rounded-md mb-1.5"
+                />
+              )}
+              <div className="bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg max-h-52 overflow-y-auto">
+                {filteredDatasets.length === 0 ? (
+                  <div className="text-xs text-[var(--text-muted)] py-3 text-center">
+                    No datasets match "{datasetFilter}"
+                  </div>
+                ) : (
+                  filteredDatasets.map((ds) => (
+                    <label
+                      key={ds.id}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-hover)] cursor-pointer transition-colors border-b border-[var(--border-subtle)] last:border-b-0"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedDatasets.has(ds.id)}
+                        onChange={() => toggleDataset(ds.id)}
+                        className="rounded accent-[var(--accent-cyan)]"
+                      />
+                      <span className="text-sm text-[var(--text-primary)] flex-1 font-[var(--font-mono)]">
+                        {ds.id}
+                      </span>
+                      <span className="text-xs text-[var(--text-muted)] font-[var(--font-mono)]">
+                        {ds.table_count}T / {ds.view_count}V
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </>
           )}
         </div>
 

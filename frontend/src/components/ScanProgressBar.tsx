@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 interface ScanProgressBarProps {
   messages: string[];
@@ -6,6 +6,8 @@ interface ScanProgressBarProps {
   error: string | null;
   completed?: boolean;
   onDismiss?: () => void;
+  /** Delay in ms before auto-dismiss starts after completion (default: 3000) */
+  autoDismissDelay?: number;
 }
 
 export function ScanProgressBar({
@@ -14,8 +16,13 @@ export function ScanProgressBar({
   error,
   completed,
   onDismiss,
+  autoDismissDelay = 3000,
 }: ScanProgressBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [fadingOut, setFadingOut] = useState(false);
+  const [autoDismissCancelled, setAutoDismissCancelled] = useState(false);
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -24,10 +31,75 @@ export function ScanProgressBar({
     }
   }, [messages]);
 
+  // Reset state when a new scan starts
+  useEffect(() => {
+    if (scanning) {
+      setFadingOut(false);
+      setAutoDismissCancelled(false);
+      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    }
+  }, [scanning]);
+
+  // Cleanup all timers on unmount
+  useEffect(() => {
+    return () => {
+      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, []);
+
+  const startFadeOut = useCallback(() => {
+    setFadingOut(true);
+    // After fade animation completes (5s), actually dismiss
+    dismissTimerRef.current = setTimeout(() => {
+      onDismiss?.();
+    }, 5000);
+  }, [onDismiss]);
+
+  // Auto-dismiss: start fade-out after delay when completed (not cancelled by hover)
+  useEffect(() => {
+    if (!completed || scanning || error || autoDismissCancelled) {
+      if (fadeTimerRef.current) {
+        clearTimeout(fadeTimerRef.current);
+        fadeTimerRef.current = null;
+      }
+      return;
+    }
+
+    fadeTimerRef.current = setTimeout(() => {
+      startFadeOut();
+    }, autoDismissDelay);
+
+    return () => {
+      if (fadeTimerRef.current) {
+        clearTimeout(fadeTimerRef.current);
+        fadeTimerRef.current = null;
+      }
+    };
+  }, [completed, scanning, error, autoDismissCancelled, autoDismissDelay, startFadeOut]);
+
+  const handleMouseEnter = useCallback(() => {
+    // If already fading out, cancel it
+    if (fadingOut) {
+      setFadingOut(false);
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+    }
+    // Cancel auto-dismiss permanently for this scan
+    setAutoDismissCancelled(true);
+  }, [fadingOut]);
+
   if (!scanning && messages.length === 0 && !error) return null;
 
   return (
-    <div className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)] overflow-hidden">
+    <div
+      className="rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)] overflow-hidden transition-opacity duration-[5000ms] ease-out"
+      style={{ opacity: fadingOut ? 0 : 1 }}
+      onMouseEnter={handleMouseEnter}
+    >
       {/* Animated scan line */}
       {scanning && (
         <div className="h-0.5 bg-[var(--bg-elevated)] overflow-hidden">

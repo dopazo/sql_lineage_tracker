@@ -9,6 +9,7 @@ import {
   type Node,
   type Edge,
   type NodeTypes,
+  type ReactFlowInstance,
   MarkerType,
   type OnNodeDrag,
 } from "@xyflow/react";
@@ -24,6 +25,7 @@ import { EdgeDetailPanel } from "./EdgeDetailPanel";
 import { ManualEdgeModal } from "./ManualEdgeModal";
 import { NodeContextMenu } from "./NodeContextMenu";
 import { ColumnTraceModal } from "./ColumnTraceModal";
+import { TraceBreadcrumb } from "./TraceBreadcrumb";
 import { FilterPanel } from "./FilterPanel";
 import { useColumnSearch } from "../hooks/useColumnSearch";
 import { useGraphFilters } from "../hooks/useGraphFilters";
@@ -201,6 +203,36 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
 
   const { scanning, messages, scanError, completed, runScan, runExpand, dismissMessages } = useScanProgress();
 
+  // React Flow instance for programmatic viewport control
+  const rfInstance = useRef<ReactFlowInstance | null>(null);
+
+  const zoomToNodes = useCallback((nodeIds: Set<string>) => {
+    if (!rfInstance.current || nodeIds.size === 0) return;
+    setTimeout(() => {
+      const relevantNodes = rfInstance.current!.getNodes().filter((n) => nodeIds.has(n.id));
+      if (relevantNodes.length === 0) return;
+      rfInstance.current!.fitView({
+        nodes: relevantNodes,
+        duration: 500,
+        padding: 0.2,
+      });
+    }, 100);
+  }, []);
+
+  const zoomToNode = useCallback(
+    (nodeId: string) => zoomToNodes(new Set([nodeId])),
+    [zoomToNodes]
+  );
+
+  // Auto-zoom when trace changes
+  const prevTraceRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (traceNodeIds && traceNodeIds !== prevTraceRef.current) {
+      zoomToNodes(traceNodeIds);
+    }
+    prevTraceRef.current = traceNodeIds;
+  }, [traceNodeIds, zoomToNodes]);
+
   const [showFilters, setShowFilters] = useState(false);
   const [showTraceModal, setShowTraceModal] = useState(false);
 
@@ -372,9 +404,6 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     [runScan, onGraphReload]
   );
 
-  const handleDismissScanMessages = useCallback(() => {
-    dismissMessages();
-  }, [dismissMessages]);
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-deep)]">
@@ -403,8 +432,17 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         scanning={scanning}
         error={scanError}
         completed={completed}
-        onDismiss={handleDismissScanMessages}
+        onDismiss={dismissMessages}
       />
+
+      {activeTrace && traceOrigin && !isTableTrace && (
+        <TraceBreadcrumb
+          graph={filteredGraph}
+          activeTrace={activeTrace}
+          traceOrigin={traceOrigin}
+          onStepClick={zoomToNode}
+        />
+      )}
 
       <div className="relative z-0 flex flex-1 overflow-hidden">
         {showFilters && (
@@ -436,6 +474,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
             onNodeContextMenu={onNodeContextMenu}
             onPaneClick={onPaneClick}
             onNodeDragStop={handleNodeDragStop}
+            onInit={(instance) => { rfInstance.current = instance; }}
             nodeTypes={rfNodeTypes}
             fitView
             minZoom={0.1}

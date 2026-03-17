@@ -8,7 +8,7 @@ export interface ColumnTraceEntry {
 /**
  * Build adjacency maps for efficient edge lookup by node.
  */
-function buildAdjacency(edges: LineageEdge[]) {
+export function buildAdjacency(edges: LineageEdge[]) {
   const bySource = new Map<string, LineageEdge[]>();
   const byTarget = new Map<string, LineageEdge[]>();
 

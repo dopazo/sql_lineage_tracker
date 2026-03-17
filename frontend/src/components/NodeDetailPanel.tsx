@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { LineageNode, LineageEdge, ColumnMapping } from "../types/graph";
 import { SqlHighlight } from "./SqlHighlight";
@@ -152,14 +152,28 @@ function ColumnMappingTooltip({
 }
 
 export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream, onExpandNode, expanding, onColumnClick, highlightedColumns = [], activeTraceColumn }: NodeDetailPanelProps) {
-  const upstreamEdges = edges.filter((e) => e.target_node === node.id);
-  const downstreamEdges = edges.filter((e) => e.source_node === node.id);
+  const upstreamEdges = useMemo(() => edges.filter((e) => e.target_node === node.id), [edges, node.id]);
+  const downstreamEdges = useMemo(() => edges.filter((e) => e.source_node === node.id), [edges, node.id]);
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Column filter
+  const [columnFilter, setColumnFilter] = useState("");
+  useEffect(() => setColumnFilter(""), [node.id]);
+
+  const filteredColumns = useMemo(() => {
+    if (!columnFilter) return node.columns;
+    const lower = columnFilter.toLowerCase();
+    return node.columns.filter(
+      (col) =>
+        col.name.toLowerCase().includes(lower) ||
+        col.data_type.toLowerCase().includes(lower)
+    );
+  }, [node.columns, columnFilter]);
 
   const getColumnMappings = useCallback(
     (columnName: string) => {
@@ -316,10 +330,22 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
         {/* Columns */}
         <div>
           <div className="label-dark">
-            Columns ({node.columns.length})
+            Columns{" "}
+            ({columnFilter && filteredColumns.length !== node.columns.length
+              ? `${filteredColumns.length}/`
+              : ""}{node.columns.length})
           </div>
+          {node.columns.length > 8 && (
+            <input
+              type="text"
+              placeholder="Filter columns..."
+              value={columnFilter}
+              onChange={(e) => setColumnFilter(e.target.value)}
+              className="input-dark w-full text-xs !py-1.5 !px-2.5 !rounded-md mb-1.5"
+            />
+          )}
           <div className="bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg max-h-48 overflow-y-auto">
-            {node.columns.map((col) => {
+            {filteredColumns.map((col) => {
               const colLower = col.name.toLowerCase();
               const isHighlighted = highlightedColumns.some(h => h.toLowerCase() === colLower);
               const isActiveOrigin = activeTraceColumn?.toLowerCase() === colLower;

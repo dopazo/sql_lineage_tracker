@@ -13,36 +13,51 @@ interface SearchBarProps {
   onOpenTraceDetail?: () => void;
 }
 
-/* ── Highlight matching substring ──────────────────────────── */
+/* ── Highlight matched characters (fuzzy) ─────────────────── */
 function HighlightMatch({
   text,
-  query,
+  indices,
   className,
 }: {
   text: string;
-  query: string;
+  indices?: number[];
   className?: string;
 }) {
-  if (!query || query.length < 2) {
+  if (!indices || indices.length === 0) {
     return <span className={className}>{text}</span>;
   }
 
-  const lower = text.toLowerCase();
-  const idx = lower.indexOf(query.toLowerCase());
+  const indexSet = new Set(indices);
+  const parts: { text: string; highlight: boolean }[] = [];
+  let current = "";
+  let currentHighlight = false;
 
-  if (idx === -1) {
-    return <span className={className}>{text}</span>;
+  for (let i = 0; i < text.length; i++) {
+    const isMatch = indexSet.has(i);
+    if (i === 0) {
+      currentHighlight = isMatch;
+      current = text[i];
+    } else if (isMatch === currentHighlight) {
+      current += text[i];
+    } else {
+      parts.push({ text: current, highlight: currentHighlight });
+      current = text[i];
+      currentHighlight = isMatch;
+    }
   }
-
-  const before = text.slice(0, idx);
-  const match = text.slice(idx, idx + query.length);
-  const after = text.slice(idx + query.length);
+  if (current) parts.push({ text: current, highlight: currentHighlight });
 
   return (
     <span className={className}>
-      {before}
-      <span className="text-[var(--accent-cyan)] font-semibold">{match}</span>
-      {after}
+      {parts.map((p, i) =>
+        p.highlight ? (
+          <span key={i} className="text-[var(--accent-cyan)] font-semibold">
+            {p.text}
+          </span>
+        ) : (
+          <span key={i}>{p.text}</span>
+        )
+      )}
     </span>
   );
 }
@@ -323,7 +338,7 @@ export function SearchBar({
                         <div className="flex-1 min-w-0">
                           <HighlightMatch
                             text={r.nodeName}
-                            query={query}
+                            indices={r.matchIndices}
                             className="font-medium text-[var(--text-primary)]"
                           />
                         </div>
@@ -372,7 +387,7 @@ export function SearchBar({
                           <div className="flex items-center gap-2">
                             <HighlightMatch
                               text={r.columnName}
-                              query={query}
+                              indices={r.matchIndices}
                               className="font-medium text-[var(--text-primary)] font-[var(--font-mono)]"
                             />
                             <span className="text-[10px] font-[var(--font-mono)] text-[var(--text-muted)] uppercase">

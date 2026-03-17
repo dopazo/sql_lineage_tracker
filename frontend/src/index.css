@@ -237,3 +237,14 @@ body {
 .node-card.dimmed {
   opacity: 0.2;
 }
+
+/* Truncated node pulsing indicator */
+@keyframes pulse-border-blue {
+  0%, 100% { border-color: rgba(59, 130, 246, 0.35); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 8px rgba(59, 130, 246, 0.1); }
+  50% { border-color: rgba(59, 130, 246, 0.75); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(59, 130, 246, 0.2); }
+}
+
+.node-card.truncated-pulse {
+  animation: pulse-border-blue 2.5s ease-in-out infinite;
+  border-style: dashed;
+}

@@ -42,10 +42,11 @@ function TableNodeComponent({ data }: NodeProps) {
   const [expanded, setExpanded] = useState(false);
   const badge = TYPE_BADGES[lineageNode.type] ?? TYPE_BADGES.table;
   const borderColor = STATUS_ACCENTS[lineageNode.status] ?? STATUS_ACCENTS.ok;
+  const isTruncated = lineageNode.status === "truncated" && !dimmed;
 
   return (
     <div
-      className={`node-card ${borderColor} ${dimmed ? "dimmed" : ""}`}
+      className={`node-card ${isTruncated ? "truncated-pulse" : borderColor} ${dimmed ? "dimmed" : ""}`}
     >
       <Handle
         type="target"
@@ -102,16 +103,23 @@ function TableNodeComponent({ data }: NodeProps) {
           </div>
         </div>
         {lineageNode.status !== "ok" && (
-          <span
-            className={`text-xs ${
-              lineageNode.status === "warning" ? "text-amber-400" :
-              lineageNode.status === "error" ? "text-red-400" : "text-blue-400"
-            }`}
-            title={lineageNode.status_message ?? lineageNode.status}
-          >
-            {lineageNode.status === "warning" ? "\u26A0" :
-             lineageNode.status === "error" ? "\u2716" : "\u22EF"}
-          </span>
+          lineageNode.status === "truncated" ? (
+            <span
+              className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-semibold animate-pulse border border-blue-500/30 font-[var(--font-mono)]"
+              title={lineageNode.status_message ?? "Unexplored dependencies"}
+            >
+              EXPAND
+            </span>
+          ) : (
+            <span
+              className={`text-xs ${
+                lineageNode.status === "warning" ? "text-amber-400" : "text-red-400"
+              }`}
+              title={lineageNode.status_message ?? lineageNode.status}
+            >
+              {lineageNode.status === "warning" ? "\u26A0" : "\u2716"}
+            </span>
+          )
         )}
         <button
           className="text-[var(--text-muted)] text-xs font-[var(--font-mono)] group-hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
@@ -173,7 +181,7 @@ function TableNodeComponent({ data }: NodeProps) {
       {/* Expand truncated node */}
       {lineageNode.status === "truncated" && onExpandNode && (
         <button
-          className="w-full px-3.5 py-2 text-xs text-blue-400 hover:bg-blue-500/10 border-t border-dashed border-blue-500/30 transition-colors flex items-center justify-center gap-1.5"
+          className="w-full px-3.5 py-2.5 text-xs text-blue-400 hover:bg-blue-500/15 bg-blue-500/5 border-t border-dashed border-blue-500/30 transition-colors flex items-center justify-center gap-1.5 font-medium"
           onClick={(e) => {
             e.stopPropagation();
             onExpandNode(lineageNode.id);
@@ -181,7 +189,7 @@ function TableNodeComponent({ data }: NodeProps) {
           title="Scan dependencies from this node"
         >
           <span className="text-[10px]">&#x25B6;</span>
-          Expand
+          Scan dependencies
         </button>
       )}
     </div>
