@@ -252,6 +252,7 @@ function ColumnsView({
                 <span className="font-[var(--font-mono)] text-[var(--text-primary)] flex-1 min-w-0 truncate">
                   {col.columnDisplay}
                 </span>
+                <span className="text-[9px] text-[var(--text-muted)] tracking-wider shrink-0 self-center">Used for</span>
                 <TargetBadges mappings={col.targetMappings} />
               </div>
             ))}
