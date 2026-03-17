@@ -31,6 +31,7 @@ import { useColumnSearch } from "../hooks/useColumnSearch";
 import { useGraphFilters } from "../hooks/useGraphFilters";
 import { useScanProgress } from "../hooks/useScanProgress";
 import { ExportModal } from "./ExportModal";
+import { OriginsModal } from "./OriginsModal";
 import type { ScanConfig } from "../types/graph";
 
 // Position persistence via localStorage
@@ -239,6 +240,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
   const [showFilters, setShowFilters] = useState(false);
   const [showTraceModal, setShowTraceModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [originsNodeId, setOriginsNodeId] = useState<string | null>(null);
 
   const [selectedNode, setSelectedNode] = useState<LineageNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<LineageEdge | null>(null);
@@ -540,6 +542,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
                 ? traceOrigin.columnName
                 : null
             }
+            onShowOrigins={setOriginsNodeId}
           />
         )}
 
@@ -586,6 +589,15 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
           fullGraph={graph}
           filteredGraph={filteredGraph}
           onClose={() => setShowExportModal(false)}
+        />
+      )}
+
+      {originsNodeId && filteredGraph.nodes[originsNodeId] && (
+        <OriginsModal
+          graph={filteredGraph}
+          nodeId={originsNodeId}
+          nodeName={`${filteredGraph.nodes[originsNodeId].dataset}.${filteredGraph.nodes[originsNodeId].name}`}
+          onClose={() => setOriginsNodeId(null)}
         />
       )}
 

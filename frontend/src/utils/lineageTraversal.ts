@@ -161,6 +161,99 @@ export function traceTable(
 }
 
 /**
+ * Find all root origin tables and columns for a given node.
+ * Traces every column backward through the graph until reaching
+ * nodes/columns with no further upstream mappings (the true origins).
+ */
+export interface OriginEntry {
+  nodeId: string;
+  dataset: string;
+  tableName: string;
+  columnName: string;
+  /** Original-case display name */
+  columnDisplay: string;
+}
+
+export function findOrigins(
+  graph: LineageGraph,
+  startNodeId: string
+): OriginEntry[] {
+  const { byTarget } = buildAdjacency(graph.edges);
+  const origins: OriginEntry[] = [];
+  const originKeys = new Set<string>();
+
+  // For each column in the start node, BFS upstream
+  const startNode = graph.nodes[startNodeId];
+  if (!startNode) return origins;
+
+  // Track visited to avoid cycles
+  const visited = new Set<string>();
+
+  // Seed queue with all columns of the start node
+  const queue: Array<{ nodeId: string; columnName: string }> = [];
+  for (const col of startNode.columns) {
+    const key = `${startNodeId}:${col.name.toLowerCase()}`;
+    visited.add(key);
+    queue.push({ nodeId: startNodeId, columnName: col.name.toLowerCase() });
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const incomingEdges = byTarget.get(current.nodeId) ?? [];
+
+    // Find mappings that feed this column
+    let hasUpstream = false;
+    for (const edge of incomingEdges) {
+      for (const mapping of edge.column_mappings) {
+        if (mapping.target_column.toLowerCase() !== current.columnName) continue;
+
+        for (const srcCol of mapping.source_columns) {
+          if (srcCol === "*") continue; // skip wildcard
+          const srcLower = srcCol.toLowerCase();
+          const key = `${edge.source_node}:${srcLower}`;
+          hasUpstream = true;
+          if (!visited.has(key)) {
+            visited.add(key);
+            queue.push({ nodeId: edge.source_node, columnName: srcLower });
+          }
+        }
+      }
+    }
+
+    // If this column has no upstream sources AND it's not the start node, it's an origin
+    if (!hasUpstream && current.nodeId !== startNodeId) {
+      const oKey = `${current.nodeId}:${current.columnName}`;
+      if (!originKeys.has(oKey)) {
+        originKeys.add(oKey);
+        const node = graph.nodes[current.nodeId];
+        if (node) {
+          const col = node.columns.find(
+            (c) => c.name.toLowerCase() === current.columnName
+          );
+          origins.push({
+            nodeId: current.nodeId,
+            dataset: node.dataset,
+            tableName: node.name,
+            columnName: current.columnName,
+            columnDisplay: col?.name ?? current.columnName,
+          });
+        }
+      }
+    }
+  }
+
+  // Sort by dataset.table.column
+  origins.sort((a, b) => {
+    const ta = `${a.dataset}.${a.tableName}`;
+    const tb = `${b.dataset}.${b.tableName}`;
+    if (ta !== tb) return ta.localeCompare(tb);
+    return a.columnName.localeCompare(b.columnName);
+  });
+
+  return origins;
+}
+
+/**
  * Get all edge IDs connecting nodes in a table-level trace.
  * Simpler than column-level: just check if both endpoints are in the set.
  */

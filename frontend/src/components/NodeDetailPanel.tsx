@@ -16,6 +16,7 @@ interface NodeDetailPanelProps {
   onColumnClick?: (nodeId: string, columnName: string) => void;
   highlightedColumns?: string[];
   activeTraceColumn?: string | null;
+  onShowOrigins?: (nodeId: string) => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -151,7 +152,7 @@ function ColumnMappingTooltip({
   );
 }
 
-export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream, onExpandNode, expanding, onColumnClick, highlightedColumns = [], activeTraceColumn }: NodeDetailPanelProps) {
+export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDownstream, onExpandNode, expanding, onColumnClick, highlightedColumns = [], activeTraceColumn, onShowOrigins }: NodeDetailPanelProps) {
   const upstreamEdges = useMemo(() => edges.filter((e) => e.target_node === node.id), [edges, node.id]);
   const downstreamEdges = useMemo(() => edges.filter((e) => e.source_node === node.id), [edges, node.id]);
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
@@ -406,6 +407,22 @@ export function NodeDetailPanel({ node, edges, onClose, onAddUpstream, onAddDown
           dotColor="bg-[var(--accent-cyan)]"
           getLabel={(e) => e.source_node}
         />
+
+        {/* Show Origins */}
+        {onShowOrigins && upstreamEdges.length > 0 && (
+          <button
+            onClick={() => onShowOrigins(node.id)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs text-[var(--accent-teal)] bg-[var(--accent-teal)]/8 hover:bg-[var(--accent-teal)]/15 border border-[var(--accent-teal)]/20 hover:border-[var(--accent-teal)]/35 rounded-lg transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="3" r="2" />
+              <circle cx="3" cy="13" r="2" />
+              <circle cx="13" cy="13" r="2" />
+              <path d="M8 5v3M5.5 11.5L7 8M10.5 11.5L9 8" />
+            </svg>
+            Show Origins
+          </button>
+        )}
 
         {/* Manual Edge Actions */}
         {(onAddUpstream || onAddDownstream) && (
