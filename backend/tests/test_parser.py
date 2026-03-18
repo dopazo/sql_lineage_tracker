@@ -6,7 +6,11 @@ independent of the BigQuery test project fixtures.
 
 import pytest
 
-from lineage_tracker.parser import contains_dynamic_sql, parse_view_lineage
+from lineage_tracker.parser import (
+    _expand_array_agg_struct_star,
+    contains_dynamic_sql,
+    parse_view_lineage,
+)
 
 
 def _get_mapping(edges, source_node, target_column):
@@ -1124,3 +1128,108 @@ class TestDynamicSQL:
         """The word 'execute' without 'immediate' is not flagged."""
         sql = "SELECT execute_count FROM mydb.stats"
         assert contains_dynamic_sql(sql) is False
+
+
+class TestExpandArrayAggStructStar:
+    """Tests for _expand_array_agg_struct_star() SQL rewrite."""
+
+    def test_basic_pattern_with_order_and_limit(self):
+        """Full pattern: ARRAY_AGG(STRUCT(...) ORDER BY ... LIMIT 1)[OFFSET(0)].*"""
+        sql = (
+            "SELECT numero_sg, "
+            "ARRAY_AGG(STRUCT(causa, resolucion) ORDER BY fecha LIMIT 1)"
+            "[OFFSET(0)].* "
+            "FROM ds.tbl GROUP BY numero_sg"
+        )
+        result = _expand_array_agg_struct_star(sql)
+        assert "STRUCT" not in result
+        assert ".*" not in result.replace("ds.*", "")  # don't match table wildcards
+        assert "as causa" in result.lower()
+        assert "as resolucion" in result.lower()
+        assert "ARRAY_AGG(causa" in result or "ARRAY_AGG(`causa`" in result
+
+    def test_with_alias_in_struct(self):
+        """Fields with aliases: STRUCT(expr AS name)."""
+        sql = (
+            "SELECT "
+            "ARRAY_AGG(STRUCT(a, CASE WHEN x THEN y ELSE z END AS b) "
+            "ORDER BY a LIMIT 1)[OFFSET(0)].* "
+            "FROM ds.tbl GROUP BY a"
+        )
+        result = _expand_array_agg_struct_star(sql)
+        assert "as b" in result.lower() or "as `b`" in result.lower()
+        assert "case" in result.lower()
+
+    def test_no_order_no_limit(self):
+        """Bare ARRAY_AGG(STRUCT(...))[OFFSET(0)].*"""
+        sql = (
+            "SELECT ARRAY_AGG(STRUCT(a, b))[OFFSET(0)].* "
+            "FROM ds.tbl"
+        )
+        result = _expand_array_agg_struct_star(sql)
+        assert "STRUCT" not in result
+        assert "as a" in result.lower() or "as `a`" in result.lower()
+        assert "as b" in result.lower() or "as `b`" in result.lower()
+
+    def test_order_only_no_limit(self):
+        """ARRAY_AGG(STRUCT(...) ORDER BY x)[OFFSET(0)].*"""
+        sql = (
+            "SELECT ARRAY_AGG(STRUCT(a, b) ORDER BY a)[OFFSET(0)].* "
+            "FROM ds.tbl"
+        )
+        result = _expand_array_agg_struct_star(sql)
+        assert "STRUCT" not in result
+        assert "ORDER BY" in result.upper()
+
+    def test_mixed_with_regular_columns(self):
+        """Regular columns alongside the ARRAY_AGG pattern."""
+        sql = (
+            "SELECT id, name, "
+            "ARRAY_AGG(STRUCT(x, y) ORDER BY x LIMIT 1)[OFFSET(0)].* "
+            "FROM ds.tbl GROUP BY id, name"
+        )
+        result = _expand_array_agg_struct_star(sql)
+        # Regular columns preserved
+        assert "id" in result.lower()
+        assert "name" in result.lower()
+        # Struct expanded
+        assert "as x" in result.lower() or "as `x`" in result.lower()
+        assert "as y" in result.lower() or "as `y`" in result.lower()
+
+    def test_no_pattern_returns_unchanged(self):
+        """SQL without the pattern is returned unchanged."""
+        sql = "SELECT id, name FROM ds.tbl"
+        result = _expand_array_agg_struct_star(sql)
+        assert result == sql
+
+    def test_end_to_end_lineage_tracing(self):
+        """Full integration: parse_view_lineage traces through expanded struct fields."""
+        sql = (
+            "SELECT numero_sg, "
+            "ARRAY_AGG(STRUCT(causa, resolucion_cliente) "
+            "ORDER BY causa LIMIT 1)[OFFSET(0)].* "
+            "FROM ET_PREV.FT_CRM_PREV "
+            "GROUP BY numero_sg"
+        )
+        schemas = {
+            "ET_PREV.FT_CRM_PREV": {
+                "numero_sg": "BIGNUMERIC",
+                "causa": "STRING",
+                "resolucion_cliente": "STRING",
+            },
+            "ET_SUBQRY.AG_HOLA_MULTI_SG": {
+                "numero_sg": "BIGNUMERIC",
+                "causa": "STRING",
+                "resolucion_cliente": "STRING",
+            },
+        }
+        edges = parse_view_lineage("ET_SUBQRY.AG_HOLA_MULTI_SG", sql, schemas)
+        # All fields should trace back to the source table
+        m_sg = _get_mapping(edges, "ET_PREV.FT_CRM_PREV", "numero_sg")
+        assert m_sg is not None
+        m_causa = _get_mapping(edges, "ET_PREV.FT_CRM_PREV", "causa")
+        assert m_causa is not None
+        assert "causa" in m_causa.source_columns
+        m_res = _get_mapping(edges, "ET_PREV.FT_CRM_PREV", "resolucion_cliente")
+        assert m_res is not None
+        assert "resolucion_cliente" in m_res.source_columns
