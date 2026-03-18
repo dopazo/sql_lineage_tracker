@@ -146,6 +146,9 @@ def parse_view_lineage(
     # Build schema in sqlglot nested format: {db: {table: {col: type}}}
     sg_schema = _build_sqlglot_schema(schemas)
 
+    # Expand ARRAY_AGG(STRUCT(...))[OFFSET(N)].* into individual columns
+    normalized_sql = _expand_array_agg_struct_star(normalized_sql)
+
     # Expand SELECT * using schema before tracing lineage
     normalized_sql = _expand_star(normalized_sql, sg_schema)
 
@@ -313,6 +316,115 @@ def _normalize_bq_identifiers(sql: str) -> str:
         return normalized.sql(dialect="bigquery")
     except Exception:
         return sql
+
+
+def _expand_array_agg_struct_star(sql: str) -> str:
+    """Expand ARRAY_AGG(STRUCT(...))[OFFSET(N)].* into individual columns.
+
+    BigQuery allows struct unpacking via .* on an array element access.
+    sqlglot.lineage() cannot trace columns through this pattern, so we
+    rewrite each struct field into its own ARRAY_AGG expression.
+
+    Example:
+        ARRAY_AGG(STRUCT(a, expr AS b) ORDER BY x LIMIT 1)[OFFSET(0)].*
+    Becomes:
+        ARRAY_AGG(a ORDER BY x LIMIT 1)[OFFSET(0)] AS a,
+        ARRAY_AGG(expr ORDER BY x LIMIT 1)[OFFSET(0)] AS b
+    """
+    try:
+        parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+    except Exception:
+        return sql
+
+    if parsed is None:
+        return sql
+
+    # Process all SELECT scopes (main query + CTEs)
+    modified = False
+    for select_node in parsed.find_all(exp.Select):
+        new_selects: list[exp.Expression] = []
+        scope_modified = False
+
+        for select_expr in select_node.expressions:
+            # Detect pattern: Dot(Bracket(ArrayAgg(...)), Star)
+            if not (
+                isinstance(select_expr, exp.Dot)
+                and isinstance(select_expr.expression, exp.Star)
+                and isinstance(select_expr.this, exp.Bracket)
+            ):
+                new_selects.append(select_expr)
+                continue
+
+            bracket = select_expr.this
+            inner = bracket.this
+            if not isinstance(inner, exp.ArrayAgg):
+                new_selects.append(select_expr)
+                continue
+
+            # Navigate: ArrayAgg > (Limit?) > (Order?) > Struct
+            agg_inner = inner.this
+            order_node = None
+            limit_node = None
+            if isinstance(agg_inner, exp.Limit):
+                limit_node = agg_inner
+                agg_inner = agg_inner.this
+            if isinstance(agg_inner, exp.Order):
+                order_node = agg_inner
+                agg_inner = agg_inner.this
+
+            if not isinstance(agg_inner, exp.Struct):
+                new_selects.append(select_expr)
+                continue
+
+            scope_modified = True
+            offset_exprs = bracket.expressions
+
+            # For each field in the struct, create an individual ARRAY_AGG
+            for field in agg_inner.expressions:
+                if isinstance(field, exp.PropertyEQ):
+                    field_name = field.this.name
+                    field_expr = field.expression
+                elif isinstance(field, exp.Alias):
+                    field_name = field.alias
+                    field_expr = field.this
+                elif isinstance(field, exp.Column):
+                    field_name = field.name
+                    field_expr = field
+                else:
+                    field_name = field.sql(dialect="bigquery")
+                    field_expr = field
+
+                # Reconstruct: ARRAY_AGG(field_expr ORDER BY ... LIMIT N)[OFFSET(M)]
+                core = field_expr.copy()
+                if order_node:
+                    core = exp.Order(
+                        this=core,
+                        expressions=[o.copy() for o in order_node.expressions],
+                    )
+                if limit_node:
+                    core = exp.Limit(
+                        this=core,
+                        expression=limit_node.expression.copy(),
+                    )
+
+                new_agg = exp.ArrayAgg(this=core)
+                new_bracket = exp.Bracket(
+                    this=new_agg,
+                    expressions=[o.copy() for o in offset_exprs],
+                )
+                aliased = exp.Alias(
+                    this=new_bracket,
+                    alias=exp.to_identifier(field_name),
+                )
+                new_selects.append(aliased)
+
+        if scope_modified:
+            select_node.set("expressions", new_selects)
+            modified = True
+
+    if not modified:
+        return sql
+    return parsed.sql(dialect="bigquery")
 
 
 def _expand_star(
