@@ -8,6 +8,7 @@ import pytest
 
 from lineage_tracker.parser import (
     _expand_array_agg_struct_star,
+    _pre_populate_schema_from_sql,
     contains_dynamic_sql,
     parse_view_lineage,
 )
@@ -1233,3 +1234,98 @@ class TestExpandArrayAggStructStar:
         m_res = _get_mapping(edges, "ET_PREV.FT_CRM_PREV", "resolucion_cliente")
         assert m_res is not None
         assert "resolucion_cliente" in m_res.source_columns
+
+
+class TestPrePopulateSchemaFromSql:
+    """Tests for _pre_populate_schema_from_sql() schema patching."""
+
+    def test_adds_missing_columns_single_table(self):
+        """Columns in single-table SELECT are added to schema."""
+        from lineage_tracker.parser import _normalize_bq_identifiers
+
+        sql = _normalize_bq_identifiers(
+            "SELECT a, b, c FROM ds.tbl WHERE d > 1"
+        )
+        sg_schema = {"ds": {"tbl": {"a": "STRING"}}}
+        _pre_populate_schema_from_sql(sql, sg_schema)
+        assert "b" in sg_schema["ds"]["tbl"]
+        assert "c" in sg_schema["ds"]["tbl"]
+        assert "d" in sg_schema["ds"]["tbl"]
+
+    def test_skips_joined_tables(self):
+        """Columns in JOIN queries are NOT added (ambiguous source)."""
+        from lineage_tracker.parser import _normalize_bq_identifiers
+
+        sql = _normalize_bq_identifiers(
+            "SELECT a.x, b.y FROM ds.t1 a JOIN ds.t2 b ON a.id = b.id"
+        )
+        sg_schema = {"ds": {"t1": {}, "t2": {}}}
+        _pre_populate_schema_from_sql(sql, sg_schema)
+        # Should not add anything since there are JOINs
+        assert sg_schema["ds"]["t1"] == {}
+        assert sg_schema["ds"]["t2"] == {}
+
+    def test_skips_tables_not_in_schema(self):
+        """Tables not in schema are not affected."""
+        from lineage_tracker.parser import _normalize_bq_identifiers
+
+        sql = _normalize_bq_identifiers("SELECT a FROM ds.unknown_tbl")
+        sg_schema = {"ds": {"other_tbl": {"x": "INT64"}}}
+        _pre_populate_schema_from_sql(sql, sg_schema)
+        assert "unknown_tbl" not in sg_schema["ds"]
+
+    def test_end_to_end_subquery_with_select_star(self):
+        """Integration: subquery SELECT * + incomplete schema -> columns traced."""
+        sql = (
+            "SELECT B.STATUS AS estado, B.CAUSA AS causa "
+            "FROM ds.main A "
+            "LEFT JOIN ("
+            "  SELECT * FROM ("
+            "    SELECT STATUS, CAUSA FROM ds.detail"
+            "  ) "
+            "  QUALIFY ROW_NUMBER() OVER(PARTITION BY STATUS ORDER BY CAUSA) = 1"
+            ") B ON A.ID = B.STATUS"
+        )
+        schemas = {
+            "ds.main": {"id": "INT64"},
+            "ds.detail": {"status": "STRING"},  # Missing: causa
+            "target.v": {"estado": "STRING", "causa": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "ds.detail", "causa")
+        assert m is not None
+        assert "causa" in m.source_columns
+
+    def test_ft_hola_crm_salesforce_incomplete_schema(self):
+        """Real-world: FT_HOLA_CRM_SALESFORCE with incomplete k2_dvel schema."""
+        sql = (
+            "SELECT B.NBR_SG_C AS NUMERO_SG, B.STATUS AS ESTADO, "
+            "B.REPEATED_CNTCT_C AS CONTACTO_REITERADO "
+            "FROM ds_hs.k2_case A "
+            "LEFT JOIN ("
+            "  SELECT * FROM ("
+            "    SELECT SAFE_CAST(NBR_SG_C AS INT64) NBR_SG_C, "
+            "    CASENUMBER, STATUS, REPEATED_CNTCT_C "
+            "    FROM ds_hs.k2_dvel"
+            "  ) "
+            "  QUALIFY ROW_NUMBER() OVER(PARTITION BY CASENUMBER ORDER BY NBR_SG_C DESC) = 1"
+            ") B ON A.CASENUMBER = B.CASENUMBER"
+        )
+        schemas = {
+            "ds_hs.k2_case": {"casenumber": "STRING"},
+            "ds_hs.k2_dvel": {"nbr_sg_c": "STRING", "casenumber": "STRING"},
+            "target.v": {
+                "numero_sg": "INT64",
+                "estado": "STRING",
+                "contacto_reiterado": "STRING",
+            },
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m_sg = _get_mapping(edges, "ds_hs.k2_dvel", "numero_sg")
+        assert m_sg is not None
+        m_estado = _get_mapping(edges, "ds_hs.k2_dvel", "estado")
+        assert m_estado is not None
+        assert "status" in m_estado.source_columns
+        m_contacto = _get_mapping(edges, "ds_hs.k2_dvel", "contacto_reiterado")
+        assert m_contacto is not None
+        assert "repeated_cntct_c" in m_contacto.source_columns
