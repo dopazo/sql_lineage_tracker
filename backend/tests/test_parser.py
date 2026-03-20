@@ -110,6 +110,45 @@ class TestAggregations:
         assert m.source_columns == ["*"]
 
 
+class TestLiterals:
+    """Literal/generated field detection."""
+
+    def test_safe_cast_literal(self):
+        sql = "SELECT SAFE_CAST('' AS INT64) AS mes, name FROM mydb.tbl"
+        schemas = {
+            "mydb.tbl": {"name": "STRING"},
+            "target.v": {"mes": "INT64", "name": "STRING"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.tbl", "mes")
+        assert m is not None
+        assert m.transformation == "literal"
+        assert m.source_columns == []
+        assert m.expression is not None
+
+    def test_string_literal(self):
+        sql = "SELECT 'hello' AS greeting, id FROM mydb.tbl"
+        schemas = {
+            "mydb.tbl": {"id": "INT64"},
+            "target.v": {"greeting": "STRING", "id": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.tbl", "greeting")
+        assert m is not None
+        assert m.transformation == "literal"
+
+    def test_numeric_literal(self):
+        sql = "SELECT 42 AS magic, id FROM mydb.tbl"
+        schemas = {
+            "mydb.tbl": {"id": "INT64"},
+            "target.v": {"magic": "INT64", "id": "INT64"},
+        }
+        edges = parse_view_lineage("target.v", sql, schemas)
+        m = _get_mapping(edges, "mydb.tbl", "magic")
+        assert m is not None
+        assert m.transformation == "literal"
+
+
 class TestProjectPrefix:
     """Handling of fully-qualified BigQuery table references."""
 

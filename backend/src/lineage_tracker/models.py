@@ -36,7 +36,7 @@ class LineageNode:
 class ColumnMapping:
     source_columns: list[str]
     target_column: str
-    transformation: str = "unknown"  # "direct" | "rename" | "expression" | "aggregation" | "external" | "new_field" | "unknown"
+    transformation: str = "unknown"  # "direct" | "rename" | "expression" | "aggregation" | "literal" | "external" | "new_field" | "unknown"
     expression: str | None = None
     description: str | None = None
 

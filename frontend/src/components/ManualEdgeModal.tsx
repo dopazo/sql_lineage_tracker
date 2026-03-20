@@ -43,6 +43,7 @@ const TRANSFORMATIONS: { value: TransformationType; label: string }[] = [
   { value: "rename", label: "Rename" },
   { value: "expression", label: "Expression" },
   { value: "aggregation", label: "Aggregation" },
+  { value: "literal", label: "Literal" },
   { value: "external", label: "External" },
   { value: "new_field", label: "New Field" },
   { value: "unknown", label: "Unknown" },

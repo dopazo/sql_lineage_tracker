@@ -892,6 +892,24 @@ def _handle_no_source(
             )
             return
 
+    # Check if all expressions are pure literals (no column references)
+    # e.g. SAFE_CAST('' AS INT64), 'hello', 42, CURRENT_TIMESTAMP()
+    if chain_exprs and all(
+        not list(
+            (e.unalias() if hasattr(e, "unalias") else e).find_all(exp.Column)
+        )
+        for e in chain_exprs
+    ):
+        primary_table = source_tables[0]
+        expr_str = chain_exprs[0].sql(dialect="bigquery")
+        edge_data[primary_table][target_col] = ColumnMapping(
+            source_columns=[],
+            target_column=target_col,
+            transformation="literal",
+            expression=expr_str,
+        )
+        return
+
     _add_unknown_mapping(edge_data, source_tables, target_col)
 
 
