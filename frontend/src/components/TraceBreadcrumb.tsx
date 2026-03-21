@@ -9,6 +9,7 @@ interface TraceBreadcrumbProps {
   activeTrace: ColumnTraceEntry[];
   traceOrigin: TraceOrigin;
   onStepClick: (nodeId: string) => void;
+  onZoomToAll: () => void;
 }
 
 export function TraceBreadcrumb({
@@ -16,6 +17,7 @@ export function TraceBreadcrumb({
   activeTrace,
   traceOrigin,
   onStepClick,
+  onZoomToAll,
 }: TraceBreadcrumbProps) {
   const { upstream, origin, downstream } = useMemo(
     () => buildOrderedChain(graph, traceOrigin, activeTrace),
@@ -78,6 +80,18 @@ export function TraceBreadcrumb({
           </div>
         ))}
       </div>
+      <button
+        onClick={onZoomToAll}
+        className="shrink-0 ml-1 p-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-deep)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
+        title="Zoom to full trace"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 5V2h3" />
+          <path d="M14 5V2h-3" />
+          <path d="M2 11v3h3" />
+          <path d="M14 11v3h-3" />
+        </svg>
+      </button>
     </div>
   );
 }

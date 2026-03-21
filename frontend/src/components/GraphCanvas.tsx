@@ -485,6 +485,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
           activeTrace={activeTrace}
           traceOrigin={traceOrigin}
           onStepClick={zoomToNode}
+          onZoomToAll={() => traceNodeIds && zoomToNodes(traceNodeIds)}
         />
       )}
 
