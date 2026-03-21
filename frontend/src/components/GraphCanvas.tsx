@@ -233,9 +233,12 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
 
   // Auto-zoom when trace changes — focus on the searched node, not the entire trace
   const prevTraceRef = useRef<Set<string> | null>(null);
+  const skipNextZoomRef = useRef(false);
   useEffect(() => {
     if (traceNodeIds && traceNodeIds !== prevTraceRef.current) {
-      if (focusNodeId && traceNodeIds.has(focusNodeId)) {
+      if (skipNextZoomRef.current) {
+        skipNextZoomRef.current = false;
+      } else if (focusNodeId && traceNodeIds.has(focusNodeId)) {
         zoomToNode(focusNodeId);
         const node = filteredGraph.nodes[focusNodeId];
         if (node) {
@@ -305,9 +308,10 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         clearTrace();
         return;
       }
-      // Trace the clicked column and sync search query
+      // Trace the clicked column and sync search query (no zoom — user already sees the node)
       const node = filteredGraph.nodes[nodeId];
       if (node) {
+        skipNextZoomRef.current = true;
         setQuery(columnName);
         selectResult({
           nodeId,
