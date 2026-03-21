@@ -57,18 +57,20 @@ function StepButton({
   );
 }
 
-/** Render a row of steps with chevrons between them, right-aligned */
+/** Render a row of steps with chevrons between them */
 function StepRow({
   steps,
   onStepClick,
   originRef,
+  className,
 }: {
   steps: ChainStep[];
   onStepClick: (nodeId: string) => void;
   originRef?: React.Ref<HTMLButtonElement>;
+  className?: string;
 }) {
   return (
-    <div className="flex items-center gap-1 shrink-0 ml-auto">
+    <div className={`flex items-center gap-1 shrink-0 ${className ?? ""}`}>
       {steps.map((step, i) => (
         <div key={`${step.nodeId}-${step.columnName}`} className="flex items-center gap-1 shrink-0">
           {i > 0 && <ChevronIcon />}
@@ -202,10 +204,10 @@ export function TraceBreadcrumb({
 
   return (
     <div className="glass border-b border-[var(--border-subtle)] px-4 py-1.5 flex items-center gap-2 animate-fade-in">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] font-[var(--font-mono)] shrink-0 self-start mt-0.5">
+      <span className={`text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] font-[var(--font-mono)] shrink-0 ${isSinglePath ? "" : "self-start mt-0.5"}`}>
         Trace
       </span>
-      <div ref={scrollRef} className="flex items-center overflow-x-auto scrollbar-none min-w-0 flex-1">
+      <div ref={scrollRef} className="flex items-center overflow-x-auto scrollbar-none min-w-0">
         {isSinglePath ? (
           <StepRow
             steps={paths[0]}
@@ -217,7 +219,7 @@ export function TraceBreadcrumb({
             {/* Divergent branches — right-aligned so they stack flush against the bracket */}
             <div ref={branchesRef} className="flex flex-col gap-1 shrink-0">
               {branches.map((branch, i) => (
-                <StepRow key={i} steps={branch} onStepClick={onStepClick} />
+                <StepRow key={i} steps={branch} onStepClick={onStepClick} className="ml-auto" />
               ))}
             </div>
             {/* Bracket connecting branches */}
@@ -239,19 +241,19 @@ export function TraceBreadcrumb({
             )}
           </div>
         )}
+        <button
+          onClick={onZoomToAll}
+          className="shrink-0 ml-2 p-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-deep)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
+          title="Zoom to full trace"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 5V2h3" />
+            <path d="M14 5V2h-3" />
+            <path d="M2 11v3h3" />
+            <path d="M14 11v3h-3" />
+          </svg>
+        </button>
       </div>
-      <button
-        onClick={onZoomToAll}
-        className="shrink-0 ml-1 p-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-deep)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors self-start mt-0.5"
-        title="Zoom to full trace"
-      >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 5V2h3" />
-          <path d="M14 5V2h-3" />
-          <path d="M2 11v3h3" />
-          <path d="M14 11v3h-3" />
-        </svg>
-      </button>
     </div>
   );
 }
