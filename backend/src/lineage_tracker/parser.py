@@ -55,6 +55,18 @@ def _extract_unknown_column(error_msg: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _build_alias_map(parsed: exp.Expression) -> dict[str, tuple[str, str]]:
+    """Build alias -> (db, table_name) map from all table references in parsed SQL."""
+    alias_map: dict[str, tuple[str, str]] = {}
+    for table in parsed.find_all(exp.Table):
+        tbl_name = table.name
+        db = table.db
+        if db and tbl_name:
+            alias = (table.alias or tbl_name).lower()
+            alias_map[alias] = (db, tbl_name)
+    return alias_map
+
+
 def _add_missing_column_to_schema(
     col_name: str,
     sql: str,
@@ -76,14 +88,7 @@ def _add_missing_column_to_schema(
     if not parsed:
         return False
 
-    # Build alias -> (db, table_name) map from all table references
-    alias_map: dict[str, tuple[str, str]] = {}
-    for table in parsed.find_all(exp.Table):
-        tbl_name = table.name
-        db = table.db
-        alias = table.alias or tbl_name
-        if db and tbl_name:
-            alias_map[alias.lower()] = (db, tbl_name)
+    alias_map = _build_alias_map(parsed)
 
     col_lower = col_name.lower()
 
@@ -346,14 +351,7 @@ def _pre_populate_schema_from_sql(
     if not parsed:
         return
 
-    # Build alias -> (db, table_name) map
-    alias_map: dict[str, tuple[str, str]] = {}
-    for table in parsed.find_all(exp.Table):
-        tbl_name = table.name
-        db = table.db
-        if db and tbl_name:
-            alias = (table.alias or tbl_name).lower()
-            alias_map[alias] = (db, tbl_name)
+    alias_map = _build_alias_map(parsed)
 
     for select_node in parsed.find_all(exp.Select):
         from_clause = select_node.args.get("from_")
@@ -894,12 +892,11 @@ def _handle_no_source(
 
     # Check if all expressions are pure literals (no column references)
     # e.g. SAFE_CAST('' AS INT64), 'hello', 42, CURRENT_TIMESTAMP()
-    if chain_exprs and all(
-        not list(
-            (e.unalias() if hasattr(e, "unalias") else e).find_all(exp.Column)
-        )
-        for e in chain_exprs
-    ):
+    def _has_column_ref(e: exp.Expression) -> bool:
+        node = e.unalias() if hasattr(e, "unalias") else e
+        return next(node.find_all(exp.Column), None) is not None
+
+    if chain_exprs and not any(_has_column_ref(e) for e in chain_exprs):
         primary_table = source_tables[0]
         expr_str = chain_exprs[0].sql(dialect="bigquery")
         edge_data[primary_table][target_col] = ColumnMapping(

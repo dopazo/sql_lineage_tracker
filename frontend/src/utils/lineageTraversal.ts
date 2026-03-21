@@ -224,9 +224,16 @@ export function findOrigins(
       const incomingEdges = byTarget.get(current.nodeId) ?? [];
 
       let hasUpstream = false;
+      let literalExpr: string | null = null;
       for (const edge of incomingEdges) {
         for (const mapping of edge.column_mappings) {
           if (mapping.target_column.toLowerCase() !== current.columnName) continue;
+
+          // Capture literal mappings in this same pass
+          if (mapping.transformation === "literal" && mapping.source_columns.length === 0) {
+            literalExpr = mapping.expression ?? null;
+            continue;
+          }
 
           for (const srcCol of mapping.source_columns) {
             if (srcCol === "*") continue;
@@ -253,78 +260,57 @@ export function findOrigins(
         }
       }
 
-      // Origin found: no upstream and not the start node
-      if (!hasUpstream && current.nodeId !== startNodeId) {
-        const node = graph.nodes[current.nodeId];
-        if (!node) continue;
+      if (!hasUpstream) {
+        const isOrigin = current.nodeId !== startNodeId;
+        const isLiteral = !isOrigin && literalExpr !== null;
 
-        // Reconstruct chain from origin → target
-        const chain: OriginChainStep[] = [];
-        let k: string | null = currentKey;
-        while (k) {
-          const p = parent.get(k);
-          if (p) {
-            chain.push({ columnDisplay: p.columnDisplay, nodeName: p.nodeName, transformation: p.transformation });
-            k = p.parentKey;
-          } else {
-            break;
+        if (isOrigin || isLiteral) {
+          const node = isOrigin ? graph.nodes[current.nodeId] : startNode;
+          if (!node) continue;
+
+          const oKey = `${current.nodeId}:${current.columnName}`;
+          let entry = originMap.get(oKey);
+          if (!entry) {
+            const col = node.columns.find(
+              (c) => c.name.toLowerCase() === current.columnName
+            );
+            entry = {
+              nodeId: current.nodeId,
+              dataset: node.dataset,
+              tableName: node.name,
+              columnName: current.columnName,
+              columnDisplay: col?.name ?? current.columnName,
+              targetMappings: [],
+            };
+            originMap.set(oKey, entry);
           }
-        }
 
-        const oKey = `${current.nodeId}:${current.columnName}`;
-        let entry = originMap.get(oKey);
-        if (!entry) {
-          const col = node.columns.find(
-            (c) => c.name.toLowerCase() === current.columnName
-          );
-          entry = {
-            nodeId: current.nodeId,
-            dataset: node.dataset,
-            tableName: node.name,
-            columnName: current.columnName,
-            columnDisplay: col?.name ?? current.columnName,
-            targetMappings: [],
-          };
-          originMap.set(oKey, entry);
-        }
-
-        if (!entry.targetMappings.some((tm) => tm.targetColumn === targetCol.name)) {
-          entry.targetMappings.push({ targetColumn: targetCol.name, chain });
-        }
-      }
-
-      // Literal field: no source columns, generated in this view itself
-      if (!hasUpstream && current.nodeId === startNodeId) {
-        for (const edge of incomingEdges) {
-          for (const mapping of edge.column_mappings) {
-            if (mapping.target_column.toLowerCase() !== current.columnName) continue;
-            if (mapping.transformation !== "literal" || mapping.source_columns.length > 0) continue;
-
-            const oKey = `${startNodeId}:${current.columnName}`;
-            let entry = originMap.get(oKey);
-            if (!entry) {
-              entry = {
-                nodeId: startNodeId,
-                dataset: startNode.dataset,
-                tableName: startNode.name,
-                columnName: current.columnName,
-                columnDisplay: targetCol.name,
-                targetMappings: [],
-              };
-              originMap.set(oKey, entry);
-            }
-
-            if (!entry.targetMappings.some((tm) => tm.targetColumn === targetCol.name)) {
+          if (!entry.targetMappings.some((tm) => tm.targetColumn === targetCol.name)) {
+            if (isLiteral) {
               entry.targetMappings.push({
                 targetColumn: targetCol.name,
                 chain: [
                   {
-                    columnDisplay: mapping.expression ?? targetCol.name,
+                    columnDisplay: literalExpr ?? targetCol.name,
                     nodeName: `${startNode.dataset}.${startNode.name}`,
                     transformation: "literal",
                   },
                 ],
               });
+            } else {
+              // Reconstruct chain from origin → target
+              const chain: OriginChainStep[] = [];
+              let k: string | null = currentKey;
+              while (k) {
+                const p = parent.get(k);
+                if (p) {
+                  chain.push({ columnDisplay: p.columnDisplay, nodeName: p.nodeName, transformation: p.transformation });
+                  k = p.parentKey;
+                } else {
+                  break;
+                }
+              }
+              entry.targetMappings.push({ targetColumn: targetCol.name, chain });
             }
           }
         }

@@ -10,6 +10,16 @@ import {
   type SavedScanInfo,
 } from "../api/client";
 
+type DropdownPanel = "warnings" | "save" | "load" | "rescan" | null;
+
+interface WarningEntry {
+  nodeId: string;
+  nodeName: string;
+  count: number;
+  kind: "parse" | "scope";
+  message: string;
+}
+
 interface ToolbarProps {
   graph: LineageGraph;
   searchQuery: string;
@@ -53,7 +63,15 @@ export function Toolbar({
   onGraphReload,
   onFocusNode,
 }: ToolbarProps) {
-  const [showRescan, setShowRescan] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState<DropdownPanel>(null);
+  const toggleDropdown = useCallback((panel: DropdownPanel) => {
+    setActiveDropdown((prev) => (prev === panel ? null : panel));
+  }, []);
+  const showRescan = activeDropdown === "rescan";
+  const showSave = activeDropdown === "save";
+  const showLoad = activeDropdown === "load";
+  const showWarnings = activeDropdown === "warnings";
+
   const [target, setTarget] = useState(
     graph.metadata.scan_config.target ?? ""
   );
@@ -65,7 +83,6 @@ export function Toolbar({
   );
 
   // Save scan state
-  const [showSave, setShowSave] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -73,24 +90,12 @@ export function Toolbar({
   const [saving, setSaving] = useState(false);
 
   // Load scan state
-  const [showLoad, setShowLoad] = useState(false);
   const [scans, setScans] = useState<SavedScanInfo[]>([]);
   const [loadingScans, setLoadingScans] = useState(false);
   const [loadingScanName, setLoadingScanName] = useState<string | null>(null);
   const [deletingName, setDeletingName] = useState<string | null>(null);
 
-  // Warnings dropdown
-  const [showWarnings, setShowWarnings] = useState(false);
-
-  interface WarningEntry {
-    nodeId: string;
-    nodeName: string;
-    count: number;
-    kind: "parse" | "scope";
-    message: string;
-  }
-
-  const warnings = useMemo(() => {
+  const warningData = useMemo(() => {
     const entries: WarningEntry[] = [];
 
     // 1. Truncated nodes → scope warnings (need to expand scan)
@@ -137,12 +142,11 @@ export function Toolbar({
       return a.nodeName.localeCompare(b.nodeName);
     });
 
-    return entries;
+    const scopeCount = entries.filter((w) => w.kind === "scope").length;
+    return { entries, scopeCount, parseCount: entries.length - scopeCount, totalWarnings: entries.length };
   }, [graph]);
 
-  const scopeCount = warnings.filter((w) => w.kind === "scope").length;
-  const parseCount = warnings.filter((w) => w.kind === "parse").length;
-  const totalWarnings = warnings.length;
+  const { entries: warnings, scopeCount, parseCount, totalWarnings } = warningData;
 
   const handleRescan = () => {
     const dsArr = datasets
@@ -154,7 +158,7 @@ export function Toolbar({
       datasets: dsArr,
       depth: depth ? parseInt(depth, 10) : null,
     });
-    setShowRescan(false);
+    setActiveDropdown(null);
   };
 
   const fetchScans = useCallback(async () => {
@@ -194,7 +198,7 @@ export function Toolbar({
       await saveScan(trimmed, overwrite);
       setSaveSuccess(true);
       setTimeout(() => {
-        setShowSave(false);
+        setActiveDropdown(null);
         setSaveSuccess(false);
         setSaveName("");
       }, 1200);
@@ -214,7 +218,7 @@ export function Toolbar({
     setLoadingScanName(name);
     try {
       await loadScan(name);
-      setShowLoad(false);
+      setActiveDropdown(null);
       onGraphReload?.();
     } catch (err: unknown) {
       console.error("Failed to load scan:", err);
@@ -236,7 +240,7 @@ export function Toolbar({
   };
 
   const closeSave = () => {
-    setShowSave(false);
+    setActiveDropdown(null);
     setSaveName("");
     setSaveError(null);
     setSaveConflict(false);
@@ -278,7 +282,7 @@ export function Toolbar({
       {totalWarnings > 0 && (
         <div className="relative">
           <button
-            onClick={() => { setShowWarnings(!showWarnings); setShowSave(false); setShowLoad(false); setShowRescan(false); }}
+            onClick={() => toggleDropdown("warnings")}
             className="btn-ghost text-sm relative flex items-center gap-1.5 text-amber-400 hover:text-amber-300"
             title={`${totalWarnings} warning${totalWarnings !== 1 ? "s" : ""}`}
           >
@@ -292,7 +296,7 @@ export function Toolbar({
 
           {showWarnings && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowWarnings(false)} />
+              <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
               <div className="absolute top-full left-0 mt-2 w-96 glass-elevated rounded-xl z-50 animate-fade-in">
                 <div className="p-4 space-y-3">
                   <div className="flex items-center gap-2">
@@ -318,7 +322,7 @@ export function Toolbar({
                         key={`${w.kind}-${w.nodeId}`}
                         onClick={() => {
                           onFocusNode?.(w.nodeId);
-                          setShowWarnings(false);
+                          setActiveDropdown(null);
                         }}
                         className="w-full text-left flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-deep)] transition-colors group"
                       >
@@ -396,7 +400,7 @@ export function Toolbar({
       {/* Save Scan */}
       <div className="relative">
         <button
-          onClick={() => { setShowLoad(false); setShowRescan(false); setShowWarnings(false); setShowSave(!showSave); }}
+          onClick={() => toggleDropdown("save")}
           className="btn-ghost text-sm"
           title="Save current scan"
         >
@@ -472,7 +476,7 @@ export function Toolbar({
       {/* Load Scan */}
       <div className="relative">
         <button
-          onClick={() => { setShowSave(false); setShowRescan(false); setShowWarnings(false); setShowLoad(!showLoad); }}
+          onClick={() => toggleDropdown("load")}
           className="btn-ghost text-sm"
           title="Load a saved scan"
         >
@@ -481,7 +485,7 @@ export function Toolbar({
 
         {showLoad && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setShowLoad(false)} />
+            <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
             <div className="absolute top-full right-0 mt-2 w-96 glass-elevated rounded-xl z-50 p-4 animate-fade-in">
               <div className="space-y-3">
                 <div className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
@@ -551,7 +555,7 @@ export function Toolbar({
       {/* Rescan */}
       <div className="relative">
         <button
-          onClick={() => { setShowSave(false); setShowLoad(false); setShowWarnings(false); setShowRescan(!showRescan); }}
+          onClick={() => toggleDropdown("rescan")}
           disabled={scanning}
           className="btn-primary text-sm py-2 px-4"
         >
@@ -570,7 +574,7 @@ export function Toolbar({
             {/* Backdrop to close */}
             <div
               className="fixed inset-0 z-40"
-              onClick={() => setShowRescan(false)}
+              onClick={() => setActiveDropdown(null)}
             />
             <div className="absolute top-full right-0 mt-2 w-80 glass-elevated rounded-xl z-50 p-4 animate-fade-in">
               <div className="space-y-3">
