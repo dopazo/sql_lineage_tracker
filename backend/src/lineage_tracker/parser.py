@@ -146,6 +146,10 @@ def parse_view_lineage(
     # Build schema in sqlglot nested format: {db: {table: {col: type}}}
     sg_schema = _build_sqlglot_schema(schemas)
 
+    # Pre-populate schema with columns explicitly referenced in the SQL
+    # so that qualify_columns (used by _expand_star) can properly qualify them
+    _pre_populate_schema_from_sql(normalized_sql, sg_schema)
+
     # Expand ARRAY_AGG(STRUCT(...))[OFFSET(N)].* into individual columns
     normalized_sql = _expand_array_agg_struct_star(normalized_sql)
 
@@ -316,6 +320,86 @@ def _normalize_bq_identifiers(sql: str) -> str:
         return normalized.sql(dialect="bigquery")
     except Exception:
         return sql
+
+
+def _pre_populate_schema_from_sql(
+    sql: str,
+    sg_schema: dict[str, dict[str, dict[str, str]]],
+) -> None:
+    """Pre-populate schema with columns explicitly referenced in single-table SELECTs.
+
+    When a SELECT references columns from a single table (no JOINs), all column
+    references must come from that table. If some columns are not in the schema
+    (e.g., the table was scanned with limited column info), qualify_columns will
+    leave them unqualified, breaking lineage tracing.
+
+    This function finds such columns and adds them to the schema as STRING
+    placeholders so qualify_columns can properly qualify them.
+
+    Mutates sg_schema in place.
+    """
+    try:
+        parsed = sqlglot.parse(sql, dialect="bigquery")[0]
+    except Exception:
+        return
+
+    if not parsed:
+        return
+
+    # Build alias -> (db, table_name) map
+    alias_map: dict[str, tuple[str, str]] = {}
+    for table in parsed.find_all(exp.Table):
+        tbl_name = table.name
+        db = table.db
+        if db and tbl_name:
+            alias = (table.alias or tbl_name).lower()
+            alias_map[alias] = (db, tbl_name)
+
+    for select_node in parsed.find_all(exp.Select):
+        from_clause = select_node.args.get("from_")
+        if not from_clause:
+            continue
+
+        source = from_clause.this
+        if not isinstance(source, exp.Table):
+            continue
+
+        # Skip if this SELECT has JOINs (ambiguous column source)
+        if select_node.args.get("joins"):
+            continue
+
+        db = source.db
+        tbl_name = source.name
+        if not db or not tbl_name:
+            continue
+
+        # Ensure the table exists in the schema
+        if db not in sg_schema or tbl_name not in sg_schema.get(db, {}):
+            continue
+
+        table_schema = sg_schema[db][tbl_name]
+
+        # Collect all column references in this SELECT scope, excluding
+        # columns inside nested subqueries (which belong to a different scope)
+        for col in select_node.find_all(exp.Column):
+            # Skip columns inside nested Select nodes (subqueries)
+            parent = col.parent
+            in_nested = False
+            while parent is not select_node and parent is not None:
+                if isinstance(parent, exp.Select):
+                    in_nested = True
+                    break
+                parent = parent.parent
+            if in_nested:
+                continue
+
+            col_name = col.name.lower()
+            if col_name and col_name not in table_schema:
+                table_schema[col_name] = "STRING"
+                logger.debug(
+                    "Schema pre-populated: added '%s' to %s.%s",
+                    col_name, db, tbl_name,
+                )
 
 
 def _expand_array_agg_struct_star(sql: str) -> str:
@@ -807,6 +891,24 @@ def _handle_no_source(
                 expression=expr_str,
             )
             return
+
+    # Check if all expressions are pure literals (no column references)
+    # e.g. SAFE_CAST('' AS INT64), 'hello', 42, CURRENT_TIMESTAMP()
+    if chain_exprs and all(
+        not list(
+            (e.unalias() if hasattr(e, "unalias") else e).find_all(exp.Column)
+        )
+        for e in chain_exprs
+    ):
+        primary_table = source_tables[0]
+        expr_str = chain_exprs[0].sql(dialect="bigquery")
+        edge_data[primary_table][target_col] = ColumnMapping(
+            source_columns=[],
+            target_column=target_col,
+            transformation="literal",
+            expression=expr_str,
+        )
+        return
 
     _add_unknown_mapping(edge_data, source_tables, target_col)
 

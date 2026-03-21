@@ -4,6 +4,7 @@ export const TRANSFORM_STYLES: Record<string, string> = {
   rename: "bg-blue-500/15 text-blue-400",
   expression: "bg-purple-500/15 text-purple-400",
   aggregation: "bg-orange-500/15 text-orange-400",
+  literal: "bg-yellow-500/15 text-yellow-400",
   external: "bg-pink-500/15 text-pink-400",
   new_field: "bg-cyan-500/15 text-cyan-400",
   unknown: "bg-slate-500/15 text-slate-400",

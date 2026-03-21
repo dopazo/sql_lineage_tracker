@@ -40,6 +40,7 @@ export interface ColumnMapping {
     | "rename"
     | "expression"
     | "aggregation"
+    | "literal"
     | "external"
     | "new_field"
     | "unknown";

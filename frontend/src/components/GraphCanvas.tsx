@@ -205,6 +205,7 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     getHighlightedColumns,
     traceOrigin,
     isTableTrace,
+    focusNodeId,
   } = useColumnSearch(filteredGraph);
 
   const { scanning, messages, scanError, completed, runScan, runExpand, dismissMessages } = useScanProgress();
@@ -230,14 +231,22 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
     [zoomToNodes]
   );
 
-  // Auto-zoom when trace changes
+  // Auto-zoom when trace changes — focus on the searched node, not the entire trace
   const prevTraceRef = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (traceNodeIds && traceNodeIds !== prevTraceRef.current) {
-      zoomToNodes(traceNodeIds);
+      if (focusNodeId && traceNodeIds.has(focusNodeId)) {
+        zoomToNode(focusNodeId);
+        const node = filteredGraph.nodes[focusNodeId];
+        if (node) {
+          setSelectedNode({ ...node, id: focusNodeId } as LineageNode);
+        }
+      } else {
+        zoomToNodes(traceNodeIds);
+      }
     }
     prevTraceRef.current = traceNodeIds;
-  }, [traceNodeIds, zoomToNodes]);
+  }, [traceNodeIds, zoomToNodes, zoomToNode, focusNodeId, filteredGraph]);
 
   const [showFilters, setShowFilters] = useState(false);
   const [showTraceModal, setShowTraceModal] = useState(false);
@@ -453,6 +462,13 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         isFiltered={isFiltered}
         filterSummary={filterSummary}
         onGraphReload={onGraphReload}
+        onFocusNode={(nodeId) => {
+          const node = filteredGraph.nodes[nodeId];
+          if (node) {
+            setSelectedNode({ ...node, id: nodeId } as LineageNode);
+            zoomToNode(nodeId);
+          }
+        }}
       />
 
       <ScanProgressBar

@@ -292,6 +292,43 @@ export function findOrigins(
           entry.targetMappings.push({ targetColumn: targetCol.name, chain });
         }
       }
+
+      // Literal field: no source columns, generated in this view itself
+      if (!hasUpstream && current.nodeId === startNodeId) {
+        for (const edge of incomingEdges) {
+          for (const mapping of edge.column_mappings) {
+            if (mapping.target_column.toLowerCase() !== current.columnName) continue;
+            if (mapping.transformation !== "literal" || mapping.source_columns.length > 0) continue;
+
+            const oKey = `${startNodeId}:${current.columnName}`;
+            let entry = originMap.get(oKey);
+            if (!entry) {
+              entry = {
+                nodeId: startNodeId,
+                dataset: startNode.dataset,
+                tableName: startNode.name,
+                columnName: current.columnName,
+                columnDisplay: targetCol.name,
+                targetMappings: [],
+              };
+              originMap.set(oKey, entry);
+            }
+
+            if (!entry.targetMappings.some((tm) => tm.targetColumn === targetCol.name)) {
+              entry.targetMappings.push({
+                targetColumn: targetCol.name,
+                chain: [
+                  {
+                    columnDisplay: mapping.expression ?? targetCol.name,
+                    nodeName: `${startNode.dataset}.${startNode.name}`,
+                    transformation: "literal",
+                  },
+                ],
+              });
+            }
+          }
+        }
+      }
     }
   }
 
