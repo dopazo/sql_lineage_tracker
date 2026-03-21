@@ -242,17 +242,17 @@ function ColumnsView({
             {group.columns.map((col, i) => (
               <div
                 key={`${col.nodeId}-${col.columnName}`}
-                className={`flex items-center gap-3 px-4 py-1.5 text-xs ${
+                className={`flex items-start gap-3 px-4 py-2 text-xs ${
                   i < group.columns.length - 1
                     ? "border-b border-[var(--border-subtle)]"
                     : ""
                 }`}
               >
-                <span className="w-1 h-1 rounded-full bg-[var(--accent-cyan)] shrink-0" />
+                <span className="w-1 h-1 rounded-full bg-[var(--accent-cyan)] shrink-0 mt-[5px]" />
                 <span className="font-[var(--font-mono)] text-[var(--text-primary)] flex-1 min-w-0 truncate">
                   {col.columnDisplay}
                 </span>
-                <span className="text-[9px] text-[var(--text-muted)] tracking-wider shrink-0 self-center">Used for</span>
+                <span className="text-[9px] text-[var(--text-muted)] tracking-wider shrink-0 mt-[2px]">Used for</span>
                 <TargetBadges mappings={col.targetMappings} />
               </div>
             ))}
