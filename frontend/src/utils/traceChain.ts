@@ -174,6 +174,107 @@ export function buildOrderedChain(
   return { upstream: upstream.reverse(), origin, downstream };
 }
 
+/* ── Trace Tree (for branching modal display) ──────────────── */
+
+/** A tree node representing one column step with its upstream sources as children. */
+export interface TraceTreeNode {
+  step: ChainStep;
+  /** Upstream sources — each edge carries its own transformation info. */
+  sources: {
+    node: TraceTreeNode;
+    transformation?: string;
+    expression?: string | null;
+  }[];
+}
+
+/**
+ * Build a tree rooted at the origin, branching into upstream sources.
+ * Unlike buildOrderedChain (flat list), this preserves the DAG structure
+ * so the UI can render branches side by side.
+ */
+export function buildUpstreamTree(
+  graph: LineageGraph,
+  traceOrigin: TraceOrigin,
+  activeTrace: ColumnTraceEntry[]
+): TraceTreeNode {
+  const traceSet = new Set(
+    activeTrace.map((t) => `${t.nodeId}:${t.columnName.toLowerCase()}`)
+  );
+  const { byTarget } = buildAdjacency(graph.edges);
+
+  function resolveColumn(nodeId: string, colLower: string) {
+    const node = graph.nodes[nodeId];
+    if (!node) return { display: colLower, dataType: "" };
+    if (colLower === "*") return { display: "*", dataType: "(all rows)" };
+    const col = node.columns.find((c) => c.name.toLowerCase() === colLower);
+    return { display: col?.name ?? colLower, dataType: col?.data_type ?? "" };
+  }
+
+  function nodeInfo(nodeId: string) {
+    const node = graph.nodes[nodeId] as LineageNode | undefined;
+    if (!node) return { name: nodeId, type: "?" };
+    return { name: `${node.dataset}.${node.name}`, type: node.type };
+  }
+
+  const visited = new Set<string>();
+
+  function build(nodeId: string, columnName: string, isOrigin: boolean): TraceTreeNode {
+    const key = `${nodeId}:${columnName}`;
+    visited.add(key);
+
+    const info = nodeInfo(nodeId);
+    const col = resolveColumn(nodeId, columnName);
+    const step: ChainStep = {
+      nodeId, nodeName: info.name, nodeType: info.type,
+      columnName, columnDisplay: col.display, dataType: col.dataType,
+      isOrigin,
+    };
+
+    const sources: TraceTreeNode["sources"] = [];
+    const edges = byTarget.get(nodeId) ?? [];
+
+    for (const edge of edges) {
+      for (const mapping of edge.column_mappings) {
+        if (mapping.target_column.toLowerCase() !== columnName) continue;
+        for (const srcCol of mapping.source_columns) {
+          const srcLower = srcCol.toLowerCase();
+          const srcKey = `${edge.source_node}:${srcLower}`;
+          if (visited.has(srcKey) || !traceSet.has(srcKey)) continue;
+
+          sources.push({
+            node: build(edge.source_node, srcLower, false),
+            transformation: mapping.transformation,
+            expression: mapping.expression,
+          });
+        }
+      }
+    }
+
+    return { step, sources };
+  }
+
+  return build(traceOrigin.nodeId, traceOrigin.columnName.toLowerCase(), true);
+}
+
+/** Count total unique nodes and steps in a tree (for stats). */
+export function countTree(root: TraceTreeNode): { nodes: number; steps: number } {
+  const nodeIds = new Set<string>();
+  let steps = 0;
+  function walk(n: TraceTreeNode) {
+    nodeIds.add(n.step.nodeId);
+    steps++;
+    for (const src of n.sources) walk(src.node);
+  }
+  walk(root);
+  return { nodes: nodeIds.size, steps };
+}
+
+/** Count leaf nodes (deepest sources) in a tree. */
+export function countLeaves(root: TraceTreeNode): number {
+  if (root.sources.length === 0) return 1;
+  return root.sources.reduce((sum, src) => sum + countLeaves(src.node), 0);
+}
+
 /**
  * Build all distinct source-to-sink paths through the trace DAG.
  * Each path is an array of ChainSteps from furthest source → origin → furthest consumer.

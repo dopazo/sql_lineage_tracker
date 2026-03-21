@@ -3,7 +3,14 @@ import { createPortal } from "react-dom";
 import type { LineageGraph } from "../types/graph";
 import type { ColumnTraceEntry } from "../utils/lineageTraversal";
 import type { TraceOrigin } from "../hooks/useColumnSearch";
-import { buildOrderedChain, type ChainStep } from "../utils/traceChain";
+import {
+  buildOrderedChain,
+  buildUpstreamTree,
+  countTree,
+  countLeaves,
+  type ChainStep,
+  type TraceTreeNode,
+} from "../utils/traceChain";
 import { TRANSFORM_STYLES } from "../constants/transforms";
 import { SqlHighlight } from "./SqlHighlight";
 
@@ -76,7 +83,6 @@ function StepCard({ step }: { step: ChainStep }) {
 
       <div className="flex-1 min-w-0">
         {isWildcard ? (
-          /* Wildcard source: show as aggregation source (table rows), not a column */
           <>
             <div className="flex items-center gap-2">
               <span className="font-medium text-sm text-[var(--text-primary)]">
@@ -91,7 +97,6 @@ function StepCard({ step }: { step: ChainStep }) {
             </div>
           </>
         ) : (
-          /* Normal column step */
           <>
             <div className="flex items-center gap-2">
               <span className="font-medium font-[var(--font-mono)] text-sm text-[var(--text-primary)]">
@@ -121,6 +126,67 @@ function StepCard({ step }: { step: ChainStep }) {
   );
 }
 
+/* ── Recursive tree renderer ───────────────────────────────── */
+
+function SourceTree({ node }: { node: TraceTreeNode }) {
+  const { sources } = node;
+
+  if (sources.length === 0) return null;
+
+  if (sources.length === 1) {
+    const src = sources[0];
+    return (
+      <>
+        {src.transformation && (
+          <StepConnector
+            transformation={src.transformation}
+            expression={src.expression}
+          />
+        )}
+        <StepCard step={src.node.step} />
+        <SourceTree node={src.node} />
+      </>
+    );
+  }
+
+  // Multiple sources — check if all share the same transformation+expression
+  const sharedTransform = sources.every(
+    (s) =>
+      s.transformation === sources[0].transformation &&
+      s.expression === sources[0].expression
+  );
+
+  return (
+    <>
+      {/* Show shared connector once above the split */}
+      {sharedTransform && sources[0].transformation && (
+        <StepConnector
+          transformation={sources[0].transformation}
+          expression={sources[0].expression}
+        />
+      )}
+      <div className="flex gap-3 mt-2">
+        {sources.map((src, i) => (
+          <div
+            key={`${src.node.step.nodeId}-${src.node.step.columnName}-${i}`}
+            className="flex-1 min-w-0 border-l-2 border-[var(--border-medium)] pl-3"
+          >
+            {/* Only show per-branch connector if not already shown above */}
+            {!sharedTransform && src.transformation && (
+              <StepConnector
+                transformation={src.transformation}
+                expression={src.expression}
+              />
+            )}
+            <StepCard step={src.node.step} />
+            <SourceTree node={src.node} />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 /* ── Main Modal ────────────────────────────────────────────── */
 
 export function ColumnTraceModal({
@@ -129,13 +195,23 @@ export function ColumnTraceModal({
   traceOrigin,
   onClose,
 }: ColumnTraceModalProps) {
-  const { upstream, origin, downstream } = useMemo(
+  // Flat chain for downstream rendering (kept as-is)
+  const { origin, downstream } = useMemo(
     () => buildOrderedChain(graph, traceOrigin, activeTrace),
     [graph, traceOrigin, activeTrace]
   );
 
-  const allSteps = [...upstream, origin, ...downstream];
-  const totalNodes = new Set(allSteps.map((s) => s.nodeId)).size;
+  // Tree for upstream (supports branching)
+  const upstreamTree = useMemo(
+    () => buildUpstreamTree(graph, traceOrigin, activeTrace),
+    [graph, traceOrigin, activeTrace]
+  );
+
+  const hasSources = upstreamTree.sources.length > 0;
+  const hasBranching = upstreamTree.sources.length > 1;
+  const treeStats = useMemo(() => countTree(upstreamTree), [upstreamTree]);
+  const totalSteps = treeStats.steps + downstream.length;
+  const sourceCount = countLeaves(upstreamTree);
 
   return createPortal(
     <>
@@ -148,7 +224,9 @@ export function ColumnTraceModal({
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-8 pointer-events-none">
         <div
-          className="glass-elevated rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-fade-in pointer-events-auto"
+          className={`glass-elevated rounded-xl w-full max-h-[85vh] flex flex-col animate-fade-in pointer-events-auto ${
+            hasBranching ? "max-w-4xl" : "max-w-2xl"
+          }`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -173,19 +251,19 @@ export function ColumnTraceModal({
             {/* Stats */}
             <div className="flex items-center gap-3 mr-4 text-[10px] font-[var(--font-mono)] text-[var(--text-muted)]">
               <span>
-                <span className="text-[var(--accent-cyan)]">{totalNodes}</span>{" "}
+                <span className="text-[var(--accent-cyan)]">{treeStats.nodes}</span>{" "}
                 nodes
               </span>
               <span>
                 <span className="text-[var(--accent-cyan)]">
-                  {allSteps.length}
+                  {totalSteps}
                 </span>{" "}
                 steps
               </span>
-              {upstream.length > 0 && (
+              {hasSources && (
                 <span>
                   <span className="text-[var(--accent-teal)]">
-                    {upstream.length}
+                    {sourceCount}
                   </span>{" "}
                   sources
                 </span>
@@ -208,8 +286,8 @@ export function ColumnTraceModal({
             </button>
           </div>
 
-          {/* Timeline: destination at top, sources at bottom */}
-          <div className="flex-1 overflow-y-auto px-5 py-4">
+          {/* Timeline */}
+          <div className="flex-1 overflow-auto px-5 py-4">
             <div className="space-y-0">
               {/* ── Used by (downstream) section ─────────────── */}
               {downstream.length > 0 && (
@@ -221,13 +299,9 @@ export function ColumnTraceModal({
                 </div>
               )}
 
-              {/* Downstream in reverse: furthest consumer first, closest to origin last */}
               {[...downstream].reverse().map((step, i) => (
                 <div key={`d-${step.nodeId}-${step.columnName}-${i}`}>
                   <StepCard step={step} />
-                  {/* Connector after: this step's transformation describes
-                      how the previous step (closer to origin) feeds into it,
-                      so it connects downward toward origin */}
                   {step.transformation && (
                     <StepConnector
                       transformation={step.transformation}
@@ -240,8 +314,8 @@ export function ColumnTraceModal({
               {/* ── Origin ─────────────────────────────────── */}
               <StepCard step={origin} />
 
-              {/* ── Sources (upstream) section ────────────────── */}
-              {upstream.length > 0 && (
+              {/* ── Sources (upstream tree) ─────────────────── */}
+              {hasSources && (
                 <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] font-[var(--font-mono)] my-3 flex items-center gap-2">
                   <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M8 2v12M4 10l4 4 4-4" />
@@ -250,24 +324,11 @@ export function ColumnTraceModal({
                 </div>
               )}
 
-              {/* Upstream reversed back: closest to origin first, furthest source last */}
-              {[...upstream].reverse().map((step, i) => (
-                <div key={`u-${step.nodeId}-${step.columnName}-${i}`}>
-                  {/* Connector before: this step's transformation describes
-                      how it feeds into the next step toward origin (above) */}
-                  {step.transformation && (
-                    <StepConnector
-                      transformation={step.transformation}
-                      expression={step.expression}
-                    />
-                  )}
-                  <StepCard step={step} />
-                </div>
-              ))}
+              <SourceTree node={upstreamTree} />
             </div>
 
             {/* Empty trace */}
-            {upstream.length === 0 && downstream.length === 0 && (
+            {!hasSources && downstream.length === 0 && (
               <div className="text-center py-8 text-sm text-[var(--text-muted)]">
                 No sources or dependents found for this column.
               </div>
