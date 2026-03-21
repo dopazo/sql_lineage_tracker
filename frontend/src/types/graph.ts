@@ -91,6 +91,7 @@ export interface ScanConfig {
   target: string | null;
   datasets: string[];
   depth: number | null;
+  merge?: boolean;
 }
 
 export interface ScanEvent {

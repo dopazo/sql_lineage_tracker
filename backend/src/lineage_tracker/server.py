@@ -389,10 +389,17 @@ def create_app(
             "datasets": body.get("datasets", []),
             "depth": body.get("depth"),
         }
+        merge = body.get("merge", False)
+        logger.info("Scan request: merge=%s, has_graph=%s", merge, app.state.graph is not None)
 
-        asyncio.create_task(
-            _run_scan(app, ext, scan_config_dict, event_bus)
-        )
+        if merge and app.state.graph is not None:
+            asyncio.create_task(
+                _run_merge_scan(app, ext, scan_config_dict, event_bus)
+            )
+        else:
+            asyncio.create_task(
+                _run_scan(app, ext, scan_config_dict, event_bus)
+            )
 
         return JSONResponse(
             status_code=202,
@@ -698,6 +705,130 @@ async def _run_scan(
         logger.exception("Scan failed")
         error_detail = f"{type(exc).__name__}: {exc}"
         event_bus.publish("error", f"Scan failed: {error_detail}")
+    finally:
+        app.state.scan_in_progress = False
+        event_bus.finish()
+
+
+async def _run_merge_scan(
+    app: FastAPI,
+    extractor: BigQueryExtractor,
+    scan_config_dict: dict[str, Any],
+    event_bus: ScanEventBus,
+) -> None:
+    """Run a scan and merge results into the existing graph (add branch)."""
+    from lineage_tracker.graph import build_graph, format_scan_report
+    from lineage_tracker.scanner import ScanResult, run_scoped_scan
+
+    config = ScanConfig(
+        target=scan_config_dict.get("target"),
+        datasets=scan_config_dict.get("datasets", []),
+        depth=scan_config_dict.get("depth"),
+    )
+
+    app.state.scan_in_progress = True
+    event_bus.reset()
+    logger.info("Starting merge scan: %s", scan_config_dict)
+
+    import time
+
+    scan_start_time = time.monotonic()
+
+    try:
+        loop = asyncio.get_event_loop()
+        graph: LineageGraph = app.state.graph  # type: ignore[assignment]
+
+        # Run scan for the new target/scope
+        scan_result = await loop.run_in_executor(
+            None,
+            lambda: run_scoped_scan(extractor, config, progress=event_bus.publish),
+        )
+
+        # Merge: existing nodes + new scan results (new data overwrites)
+        merged_nodes = {k: copy.deepcopy(v) for k, v in graph.nodes.items()}
+        merged_nodes.update(scan_result.nodes)
+
+        merged_result = ScanResult(
+            nodes=merged_nodes,
+            errors=scan_result.errors,
+        )
+
+        # Preserve manual edges
+        existing_manual_edges = [e for e in graph.edges if e.edge_type == "manual"]
+
+        # Only re-parse new/affected nodes
+        new_node_ids = set(scan_result.nodes.keys())
+        dependents_to_reparse = {
+            e.target_node
+            for e in graph.edges
+            if e.edge_type != "manual" and e.source_node in new_node_ids
+        }
+        reparse_ids = new_node_ids | dependents_to_reparse
+
+        # Carry over automatic edges for nodes that won't be re-parsed
+        existing_auto_edges = [
+            e for e in graph.edges
+            if e.edge_type != "manual" and e.target_node not in reparse_ids
+        ]
+
+        # Merge scan_config: combine datasets, clear single target
+        original_cfg = graph.metadata.scan_config
+        combined_datasets = list(set(
+            (original_cfg.datasets or []) + (config.datasets or [])
+        ))
+        merged_config = ScanConfig(
+            target=None,
+            datasets=combined_datasets,
+            depth=None,
+        )
+
+        # Rebuild graph
+        new_graph = await loop.run_in_executor(
+            None,
+            lambda: build_graph(
+                merged_result,
+                merged_config,
+                app.state.project_id,
+                existing_manual_edges,
+                progress=event_bus.publish,
+                only_parse=reparse_ids,
+                existing_edges=existing_auto_edges,
+            ),
+        )
+
+        # Preserve prune points
+        new_graph.prune_points = list(graph.prune_points)
+
+        app.state.graph = new_graph
+        await _save_current_graph_async(app)
+
+        print(format_scan_report(new_graph, scan_result.errors))
+
+        elapsed = time.monotonic() - scan_start_time
+        if elapsed >= 60:
+            minutes = int(elapsed // 60)
+            seconds = int(elapsed % 60)
+            duration_str = f"{minutes}m {seconds}s"
+        else:
+            duration_str = f"{elapsed:.1f}s"
+
+        new_count = len(new_node_ids - set(graph.nodes.keys()))
+        event_bus.publish(
+            "complete",
+            f"Merge complete: +{new_count} new nodes, {len(new_graph.nodes)} total ({duration_str})",
+        )
+
+        logger.info(
+            "Merge scan complete: +%d new, %d total nodes, %d edges (%s)",
+            new_count,
+            len(new_graph.nodes),
+            len(new_graph.edges),
+            duration_str,
+        )
+    except Exception as exc:
+        logger.exception("Merge scan failed")
+        error_detail = f"{type(exc).__name__}: {exc}"
+        event_bus.publish("error", f"Merge scan failed: {error_detail}")
     finally:
         app.state.scan_in_progress = False
         event_bus.finish()

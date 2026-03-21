@@ -148,6 +148,8 @@ export function Toolbar({
 
   const { entries: warnings, scopeCount, parseCount, totalWarnings } = warningData;
 
+  const [mergeMode, setMergeMode] = useState(false);
+
   const handleRescan = () => {
     const dsArr = datasets
       .split(",")
@@ -157,6 +159,7 @@ export function Toolbar({
       target: target || null,
       datasets: dsArr,
       depth: depth ? parseInt(depth, 10) : null,
+      merge: mergeMode || undefined,
     });
     setActiveDropdown(null);
   };
@@ -578,6 +581,34 @@ export function Toolbar({
             />
             <div className="absolute top-full right-0 mt-2 w-80 glass-elevated rounded-xl z-50 p-4 animate-fade-in">
               <div className="space-y-3">
+                {/* Mode toggle */}
+                <div className="flex rounded-lg overflow-hidden border border-white/10">
+                  <button
+                    onClick={() => setMergeMode(false)}
+                    className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                      !mergeMode
+                        ? "bg-gradient-to-r from-teal-500 to-cyan-400 text-[#0a0e1a] font-semibold"
+                        : "bg-white/5 text-white/40 hover:text-white/70"
+                    }`}
+                  >
+                    Full Re-scan
+                  </button>
+                  <button
+                    onClick={() => setMergeMode(true)}
+                    className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                      mergeMode
+                        ? "bg-gradient-to-r from-teal-500 to-cyan-400 text-[#0a0e1a] font-semibold"
+                        : "bg-white/5 text-white/40 hover:text-white/70"
+                    }`}
+                  >
+                    Add Branch
+                  </button>
+                </div>
+                {mergeMode && (
+                  <p className="text-[10px] text-white/40 leading-tight">
+                    Scans a new target and merges into the existing graph without removing current nodes.
+                  </p>
+                )}
                 <div>
                   <label className="label-dark">Target</label>
                   <input
@@ -609,7 +640,7 @@ export function Toolbar({
                   />
                 </div>
                 <button onClick={handleRescan} className="btn-primary w-full">
-                  Start Scan
+                  {mergeMode ? "Add Branch" : "Start Scan"}
                 </button>
               </div>
             </div>
