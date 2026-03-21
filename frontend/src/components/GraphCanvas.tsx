@@ -453,6 +453,13 @@ export function GraphCanvas({ graph, onGraphReload }: GraphCanvasProps) {
         isFiltered={isFiltered}
         filterSummary={filterSummary}
         onGraphReload={onGraphReload}
+        onFocusNode={(nodeId) => {
+          const node = filteredGraph.nodes[nodeId];
+          if (node) {
+            setSelectedNode({ ...node, id: nodeId } as LineageNode);
+            zoomToNode(nodeId);
+          }
+        }}
       />
 
       <ScanProgressBar

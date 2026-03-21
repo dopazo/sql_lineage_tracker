@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { LineageGraph, ScanConfig } from "../types/graph";
 import { SearchBar } from "./SearchBar";
 import type { SearchResult } from "../hooks/useColumnSearch";
@@ -29,6 +29,7 @@ interface ToolbarProps {
   isFiltered?: boolean;
   filterSummary?: string;
   onGraphReload?: () => void;
+  onFocusNode?: (nodeId: string) => void;
 }
 
 export function Toolbar({
@@ -50,6 +51,7 @@ export function Toolbar({
   isFiltered,
   filterSummary,
   onGraphReload,
+  onFocusNode,
 }: ToolbarProps) {
   const [showRescan, setShowRescan] = useState(false);
   const [target, setTarget] = useState(
@@ -76,6 +78,71 @@ export function Toolbar({
   const [loadingScans, setLoadingScans] = useState(false);
   const [loadingScanName, setLoadingScanName] = useState<string | null>(null);
   const [deletingName, setDeletingName] = useState<string | null>(null);
+
+  // Warnings dropdown
+  const [showWarnings, setShowWarnings] = useState(false);
+
+  interface WarningEntry {
+    nodeId: string;
+    nodeName: string;
+    count: number;
+    kind: "parse" | "scope";
+    message: string;
+  }
+
+  const warnings = useMemo(() => {
+    const entries: WarningEntry[] = [];
+
+    // 1. Truncated nodes → scope warnings (need to expand scan)
+    for (const [nodeId, node] of Object.entries(graph.nodes)) {
+      if (node.status === "truncated") {
+        entries.push({
+          nodeId,
+          nodeName: `${node.dataset}.${node.name}`,
+          count: 0,
+          kind: "scope",
+          message: node.status_message ?? "Dataset not in scan scope",
+        });
+      }
+    }
+
+    // 2. Nodes with unknown column mappings → parse warnings
+    // Build map: target_node → count of unknown columns
+    const unknownByNode = new Map<string, number>();
+    for (const edge of graph.edges) {
+      for (const m of edge.column_mappings) {
+        if (m.transformation === "unknown") {
+          unknownByNode.set(
+            edge.target_node,
+            (unknownByNode.get(edge.target_node) ?? 0) + 1,
+          );
+        }
+      }
+    }
+    for (const [nodeId, count] of unknownByNode) {
+      const node = graph.nodes[nodeId];
+      if (!node) continue;
+      entries.push({
+        nodeId,
+        nodeName: `${node.dataset}.${node.name}`,
+        count,
+        kind: "parse",
+        message: `${count} column${count > 1 ? "s" : ""} could not be parsed`,
+      });
+    }
+
+    // Sort: scope first, then parse; within each, by name
+    entries.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === "scope" ? -1 : 1;
+      return a.nodeName.localeCompare(b.nodeName);
+    });
+
+    return entries;
+  }, [graph]);
+
+  const scopeCount = warnings.filter((w) => w.kind === "scope").length;
+  const parseCount = warnings.filter((w) => w.kind === "parse").length;
+  const totalWarnings = warnings.length;
 
   const handleRescan = () => {
     const dsArr = datasets
@@ -207,6 +274,88 @@ export function Toolbar({
         </span>
       </div>
 
+      {/* Warnings */}
+      {totalWarnings > 0 && (
+        <div className="relative">
+          <button
+            onClick={() => { setShowWarnings(!showWarnings); setShowSave(false); setShowLoad(false); setShowRescan(false); }}
+            className="btn-ghost text-sm relative flex items-center gap-1.5 text-amber-400 hover:text-amber-300"
+            title={`${totalWarnings} warning${totalWarnings !== 1 ? "s" : ""}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 1.5L1 14h14L8 1.5z" />
+              <path d="M8 6v3" />
+              <circle cx="8" cy="11.5" r="0.5" fill="currentColor" stroke="none" />
+            </svg>
+            <span className="font-[var(--font-mono)] text-[11px]">{totalWarnings}</span>
+          </button>
+
+          {showWarnings && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowWarnings(false)} />
+              <div className="absolute top-full left-0 mt-2 w-96 glass-elevated rounded-xl z-50 animate-fade-in">
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                      Warnings
+                    </span>
+                    <div className="flex-1" />
+                    {scopeCount > 0 && (
+                      <span className="text-[10px] font-[var(--font-mono)] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                        {scopeCount} scope
+                      </span>
+                    )}
+                    {parseCount > 0 && (
+                      <span className="text-[10px] font-[var(--font-mono)] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
+                        {parseCount} parse
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                    {warnings.map((w) => (
+                      <button
+                        key={`${w.kind}-${w.nodeId}`}
+                        onClick={() => {
+                          onFocusNode?.(w.nodeId);
+                          setShowWarnings(false);
+                        }}
+                        className="w-full text-left flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-deep)] transition-colors group"
+                      >
+                        <span
+                          className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
+                            w.kind === "scope"
+                              ? "bg-blue-400"
+                              : "bg-amber-400"
+                          }`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-[var(--font-mono)] text-[var(--text-primary)] truncate group-hover:text-[var(--accent-cyan)] transition-colors">
+                            {w.nodeName}
+                          </div>
+                          <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                            {w.kind === "scope" ? (
+                              <span className="text-blue-400/80">{w.message} — expand to resolve</span>
+                            ) : (
+                              <span className="text-amber-400/80">{w.message}</span>
+                            )}
+                          </div>
+                        </div>
+                        {w.kind === "parse" && (
+                          <span className="text-[10px] font-[var(--font-mono)] text-amber-400/60 shrink-0 mt-0.5">
+                            {w.count} col{w.count !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Filters toggle */}
       {onToggleFilters && (
         <button
@@ -247,7 +396,7 @@ export function Toolbar({
       {/* Save Scan */}
       <div className="relative">
         <button
-          onClick={() => { setShowLoad(false); setShowRescan(false); setShowSave(!showSave); }}
+          onClick={() => { setShowLoad(false); setShowRescan(false); setShowWarnings(false); setShowSave(!showSave); }}
           className="btn-ghost text-sm"
           title="Save current scan"
         >
@@ -323,7 +472,7 @@ export function Toolbar({
       {/* Load Scan */}
       <div className="relative">
         <button
-          onClick={() => { setShowSave(false); setShowRescan(false); setShowLoad(!showLoad); }}
+          onClick={() => { setShowSave(false); setShowRescan(false); setShowWarnings(false); setShowLoad(!showLoad); }}
           className="btn-ghost text-sm"
           title="Load a saved scan"
         >
@@ -402,7 +551,7 @@ export function Toolbar({
       {/* Rescan */}
       <div className="relative">
         <button
-          onClick={() => { setShowSave(false); setShowLoad(false); setShowRescan(!showRescan); }}
+          onClick={() => { setShowSave(false); setShowLoad(false); setShowWarnings(false); setShowRescan(!showRescan); }}
           disabled={scanning}
           className="btn-primary text-sm py-2 px-4"
         >
