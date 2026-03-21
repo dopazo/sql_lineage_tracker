@@ -33,6 +33,7 @@ export function useColumnSearch(graph: LineageGraph | null) {
   );
   const [isTableTrace, setIsTableTrace] = useState(false);
   const [traceOrigin, setTraceOrigin] = useState<TraceOrigin | null>(null);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
 
   const searchResults = useMemo<SearchResult[]>(() => {
     if (!graph || query.length < 2) return [];
@@ -95,6 +96,7 @@ export function useColumnSearch(graph: LineageGraph | null) {
   const selectResult = useCallback(
     (result: SearchResult) => {
       if (!graph) return;
+      setFocusNodeId(result.nodeId);
       if (result.isTableResult) {
         const trace = traceTable(graph, result.nodeId);
         setActiveTrace(trace);
@@ -114,6 +116,7 @@ export function useColumnSearch(graph: LineageGraph | null) {
     setActiveTrace(null);
     setIsTableTrace(false);
     setTraceOrigin(null);
+    setFocusNodeId(null);
     setQuery("");
   }, []);
 
@@ -157,5 +160,6 @@ export function useColumnSearch(graph: LineageGraph | null) {
     getHighlightedColumns,
     traceOrigin,
     isTableTrace,
+    focusNodeId,
   };
 }
